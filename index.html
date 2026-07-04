@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest" />
+<link rel="manifest" href="manifest.webmanifest?v=1.1.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -152,9 +152,30 @@
     max-width:560px;margin:0 auto;padding:0 14px;pointer-events:none;
   }
   .addbar .inner{
+    position:relative;
     pointer-events:auto;background:var(--surface);border-radius:16px;box-shadow:0 6px 24px rgba(35,40,42,.16);
     padding:8px;display:flex;gap:8px;align-items:center;border:1px solid var(--line);
   }
+  .catchip{
+    flex:0 0 auto;width:44px;height:44px;border-radius:12px;background:var(--bg);
+    font-size:20px;display:grid;place-items:center;border:1.5px solid var(--line);
+  }
+  .catchip.manual{border-color:var(--green);background:var(--green-soft);}
+  .catmenu{
+    position:absolute;left:8px;right:8px;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:8px;z-index:30;
+    display:none;grid-template-columns:repeat(3,1fr);gap:6px;pointer-events:auto;
+  }
+  .catmenu.show{display:grid;}
+  #itemCatMenu{bottom:calc(100% + 8px);}
+  #stockCatMenu{top:calc(100% + 8px);}
+  .catopt{
+    display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;
+    border-radius:10px;font-size:11px;color:var(--ink);font-weight:600;
+  }
+  .catopt:active{background:var(--green-soft);}
+  .catopt .em{font-size:18px;}
+  .catopt.sel{background:var(--green-soft);color:var(--green);}
   .addbar input{flex:1;border:none;padding:12px;background:transparent;}
   .addbar input:focus{outline:none;}
   .addbar .go{width:44px;height:44px;border-radius:12px;background:var(--green);color:#fff;display:grid;place-items:center;flex:0 0 auto;}
@@ -291,13 +312,15 @@
       <div class="section-title"><h2>在庫（常備品）</h2><span class="count" id="stockCount"></span></div>
       <p style="font-size:13px;color:var(--muted);margin:2px 4px 8px;">「切れた」にすると買い物リストへ自動で追加されます。</p>
       <div id="stockBody"></div>
-      <div class="addbar" style="position:static;padding:0;margin-top:10px;">
+      <div class="addbar" style="position:relative;padding:0;margin-top:10px;">
         <div class="inner" style="box-shadow:var(--shadow);">
+          <button class="catchip" id="stockCatBtn" type="button" aria-label="ジャンルを選ぶ">🛒</button>
           <input id="stockAdd" placeholder="常備品を追加（例：牛乳）" />
           <button class="go" id="stockAddGo" aria-label="追加">
             <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
         </div>
+        <div class="catmenu" id="stockCatMenu"></div>
       </div>
     </section>
 
@@ -364,14 +387,16 @@
         <h3>接続</h3>
         <button class="btn ghost mini" id="reconfigBtn">Firebase設定をやり直す</button>
       </div>
-      <p style="text-align:center;color:var(--muted);font-size:12px;margin:18px 0;">おうちの買い物 ・ v1.0</p>
+      <p style="text-align:center;color:var(--muted);font-size:12px;margin:18px 0;">おうちの買い物 ・ <span id="verTxt"></span></p>
     </section>
   </main>
 
   <!-- 追加バー（買い物リスト時のみ表示） -->
   <div class="addbar" id="addbar">
+    <div class="catmenu" id="itemCatMenu"></div>
     <div class="sugg" id="sugg"></div>
     <div class="inner">
+      <button class="catchip" id="itemCatBtn" type="button" aria-label="ジャンルを選ぶ">🛒</button>
       <input id="itemAdd" placeholder="買うものを追加" />
       <button class="go" id="itemAddGo" aria-label="追加">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -414,6 +439,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
+const VERSION = "v1.1.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -456,6 +482,7 @@ let settings = load(LS.set) || { notify:"errand" };
 let listItems=[], stockItems=[], histItems=[];
 let unsub=[];
 let setupColor = COLORS[0];
+let itemCatManual=null, stockCatManual=null; // nullなら自動推定に追従
 
 function load(k){ try{return JSON.parse(localStorage.getItem(k));}catch{return null;} }
 function save(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
@@ -568,11 +595,11 @@ function listen(){
 }
 
 /* ================= 操作 ================= */
-async function addItem(name){
+async function addItem(name,catOverride){
   name=name.trim(); if(!name)return;
   // 既にリストに未購入で存在するなら二重追加しない
   if(listItems.some(i=>!i.checked && i.name===name)){ toast("すでにリストにあります"); return; }
-  const cat=guessCat(name);
+  const cat=catOverride||guessCat(name);
   await addDoc(listCol(),{
     name,category:cat,checked:false,
     addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
@@ -601,11 +628,11 @@ async function delItem(it){
   await deleteDoc(doc(listCol(),it.id));
 }
 
-async function addStock(name){
+async function addStock(name,catOverride){
   name=name.trim(); if(!name)return;
   if(stockItems.some(s=>s.name===name)){ toast("すでに登録済みです"); return; }
   await addDoc(stockCol(),{
-    name,category:guessCat(name),state:"ok",
+    name,category:catOverride||guessCat(name),state:"ok",
     updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
   });
   logHist(`常備品「${name}」を登録`);
@@ -760,6 +787,33 @@ function renderHist(){
   });
 }
 
+/* ================= ジャンル選択ピッカー ================= */
+function updateCatChipGuess(btn,name){
+  const cid = name.trim() ? guessCat(name) : "other";
+  btn.textContent = CAT_MAP[cid].emoji;
+}
+function resetCatChip(btn){
+  btn.textContent = CAT_MAP.other.emoji;
+  btn.classList.remove("manual");
+}
+function setupCatPicker({btn,menu,input,getManual,setManual}){
+  menu.innerHTML="";
+  CATS.forEach(c=>{
+    const b=document.createElement("button"); b.type="button"; b.className="catopt";
+    b.innerHTML=`<span class="em">${c.emoji}</span><span>${c.name}</span>`;
+    b.onclick=()=>{
+      setManual(c.id);
+      btn.textContent=c.emoji; btn.classList.add("manual");
+      menu.classList.remove("show");
+    };
+    menu.appendChild(b);
+  });
+  btn.onclick=()=>{ menu.classList.toggle("show"); };
+  document.addEventListener("click",e=>{
+    if(!e.target.closest(`#${btn.id}`) && !e.target.closest(`#${menu.id}`)) menu.classList.remove("show");
+  });
+}
+
 /* ================= サジェスト ================= */
 function refreshSugg(){
   const box=$("#sugg"); if(!box)return;
@@ -791,15 +845,37 @@ function initUI(){
       window.scrollTo(0,0);
     };
   });
+  // ジャンル選択（買い物・在庫の追加バー共通）
+  setupCatPicker({
+    btn:$("#itemCatBtn"), menu:$("#itemCatMenu"), input:$("#itemAdd"),
+    getManual:()=>itemCatManual, setManual:v=>itemCatManual=v
+  });
+  setupCatPicker({
+    btn:$("#stockCatBtn"), menu:$("#stockCatMenu"), input:$("#stockAdd"),
+    getManual:()=>stockCatManual, setManual:v=>stockCatManual=v
+  });
+
   // 追加：買い物
-  const doAdd=()=>{ const v=$("#itemAdd").value; if(v.trim()){addItem(v);$("#itemAdd").value="";refreshSugg();} };
+  const doAdd=()=>{
+    const v=$("#itemAdd").value;
+    if(v.trim()){ addItem(v,itemCatManual); $("#itemAdd").value=""; resetCatChip($("#itemCatBtn")); itemCatManual=null; refreshSugg(); }
+  };
   $("#itemAddGo").onclick=doAdd;
   $("#itemAdd").addEventListener("keydown",e=>{ if(e.key==="Enter")doAdd(); });
-  $("#itemAdd").addEventListener("input",refreshSugg);
+  $("#itemAdd").addEventListener("input",()=>{
+    refreshSugg();
+    if(itemCatManual===null) updateCatChipGuess($("#itemCatBtn"),$("#itemAdd").value);
+  });
   // 追加：在庫
-  const doStock=()=>{ const v=$("#stockAdd").value; if(v.trim()){addStock(v);$("#stockAdd").value="";} };
+  const doStock=()=>{
+    const v=$("#stockAdd").value;
+    if(v.trim()){ addStock(v,stockCatManual); $("#stockAdd").value=""; resetCatChip($("#stockCatBtn")); stockCatManual=null; }
+  };
   $("#stockAddGo").onclick=doStock;
   $("#stockAdd").addEventListener("keydown",e=>{ if(e.key==="Enter")doStock(); });
+  $("#stockAdd").addEventListener("input",()=>{
+    if(stockCatManual===null) updateCatChipGuess($("#stockCatBtn"),$("#stockAdd").value);
+  });
 
   // 通知ラジオ
   $$('#notifyRadios input').forEach(r=>{
@@ -855,6 +931,9 @@ function initUI(){
 
   // PWAインストール
   setupInstall();
+
+  // バージョン表示
+  $("#verTxt").textContent = VERSION;
 
   // 初期タブ表示（買い物）
   $("#addbar").style.display="block";
@@ -927,7 +1006,7 @@ function toast(msg){
 /* ================= Service Worker 登録 ================= */
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("sw.js").catch(e=>console.log("SW:",e));
+    navigator.serviceWorker.register("sw.js?v="+VERSION.replace("v","")).catch(e=>console.log("SW:",e));
   });
 }
 </script>
