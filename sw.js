@@ -1,10 +1,8 @@
 /* おうちの買い物 - Service Worker
    役割：アプリの外枠（HTML/アイコン）をキャッシュしてオフラインでも開けるようにする。
    データの同期・オフライン保存は Firestore 側が担当するので、ここでは扱わない。 */
-const CACHE = "kaimono-v1";
+const CACHE = "kaimono-v2";
 const SHELL = [
-  "./",
-  "./index.html",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
@@ -28,7 +26,20 @@ self.addEventListener("fetch", e => {
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== "GET") return;
 
-  // アプリの外枠はキャッシュ優先（オフラインでも起動できる）
+  // HTML（アプリ本体）は常に最新を優先。オフライン時だけキャッシュにフォールバック
+  const isHTML = e.request.mode === "navigate" || url.pathname.endsWith("index.html") || url.pathname.endsWith("/");
+  if (isHTML) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(e.request).then(hit => hit || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  // アイコン等はキャッシュ優先（オフラインでも起動できる）
   e.respondWith(
     caches.match(e.request).then(hit => {
       if (hit) return hit;
