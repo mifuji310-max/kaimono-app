@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.2.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.2.1" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -96,7 +96,11 @@
   .row .del:active{background:var(--bg);}
 
   /* ---------- 在庫の3状態セグメント（シグネチャ要素） ---------- */
-  .stock-row{align-items:center;}
+  .stock-row{align-items:center;gap:8px;}
+  .stock-row .body{flex-direction:column;align-items:stretch;gap:1px;}
+  .stock-row .name{width:100%;}
+  .stock-row .meta{width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .stock-row .seg button{min-width:46px;padding:0 6px;}
   .seg{display:flex;background:var(--bg);border-radius:11px;padding:3px;gap:3px;flex:0 0 auto;}
   .seg button{
     min-width:52px;height:38px;border-radius:9px;font-size:13px;font-weight:700;color:var(--muted);
@@ -443,7 +447,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.2.0";
+const VERSION = "v1.2.1";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -776,12 +780,10 @@ function stockRow(st){
     bt.onclick=()=>setStock(st,v);
     seg.appendChild(bt);
   });
-  // 長押しで削除
-  let t;
-  row.onpointerdown=e=>{ t=setTimeout(()=>{ if(confirm(`「${st.name}」を常備品から削除しますか？`))delStock(st); },600); };
-  row.onpointerup=()=>clearTimeout(t);
-  row.onpointerleave=()=>clearTimeout(t);
-  row.append(b,seg);
+  const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","常備品を削除");
+  del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
+  del.onclick=()=>{ if(confirm(`「${st.name}」を常備品から削除しますか？`)) delStock(st); };
+  row.append(b,seg,del);
   return row;
 }
 
