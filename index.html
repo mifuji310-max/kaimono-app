@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.2.1" />
+<link rel="manifest" href="manifest.webmanifest?v=1.3.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -447,7 +447,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.2.1";
+const VERSION = "v1.3.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -465,32 +465,62 @@ const COLORS = ["#2F8F6B","#E0A93B","#DB5A4B","#4E7CC0","#9B6DC7","#D9739B","#5F
 
 // キーワード→カテゴリの簡易推定
 const GUESS = [
+  // 具体的な調味料・乾物（一般ルールより先に判定して誤分類を防ぐ）
+  [/みりん|料理酒|調理酒|白だし|めんつゆ|焼肉のタレ|だしの素|鶏ガラ|コンソメ|片栗粉|パン粉|小麦粉|かつお節|かつおぶし|ふえるワカメ|ワカメ|インスタントスープ|スープ|ごま/,"season"],
   [/牛乳|ヨーグルト|ヤクルト|チーズ|バター|マーガリン|卵|たまご|ミルク|豆腐|納豆/,"dairy"],
-  [/肉|豚|牛|鶏|とり|ひき|魚|さかな|鮭|さば|まぐろ|えび|刺身|ベーコン|ハム|ソーセージ|ウインナー|練り物|かまぼこ|ちくわ/,"meat"],
-  [/野菜|菜|トマト|きゅうり|なす|人参|にんじん|玉ねぎ|たまねぎ|じゃがいも|キャベツ|レタス|ねぎ|ネギ|ほうれん草|ピーマン|大根|きのこ|ブロッコリー|もやし|葉物|果物|りんご|バナナ|みかん|いちご|レモン/,"veg"],
-  [/パン|米|こめ|ごはん|麺|めん|パスタ|うどん|そば|ラーメン|シリアル|小麦粉|粉/,"bread"],
-  [/塩|しお|砂糖|さとう|醤油|しょうゆ|味噌|みそ|酢|油|オイル|ソース|ケチャップ|マヨ|だし|コンソメ|香辛料|こしょう|わさび|乾物|海苔|のり|わかめ|ふりかけ|ゆかり|ドレッシング|ジャム/,"season"],
-  [/冷凍/,"frozen"],
-  [/菓子|おやつ|チョコ|クッキー|スナック|アイス|ジュース|お茶|麦茶|コーヒー|水|ビール|酒|飲料/,"snack"],
-  [/洗剤|トイレ|ティッシュ|ペーパー|シャンプー|リンス|石鹸|せっけん|歯|掃除|ラップ|ゴミ袋|電池|ボディ|柔軟|アルコール|漂白/,"daily"],
+  [/肉|豚|牛|鶏|とり|ひき|魚|さかな|鮭|さば|まぐろ|えび|刺身|ベーコン|ハム|ソーセージ|ウインナー|練り物|かまぼこ|ちくわ|ツナ/,"meat"],
+  [/野菜|菜|トマト|きゅうり|なす|人参|にんじん|玉ねぎ|たまねぎ|じゃがいも|キャベツ|レタス|ねぎ|ネギ|ほうれん草|ピーマン|大根|きのこ|ブロッコリー|もやし|葉物|しょうが|生姜|にんにく|ニンニク|果物|りんご|バナナ|みかん|いちご|レモン/,"veg"],
+  [/パン|米|こめ|ごはん|麺|めん|パスタ|うどん|そば|ラーメン|シリアル|粉/,"bread"],
+  [/塩|しお|砂糖|さとう|醤油|しょうゆ|味噌|みそ|酢|油|オイル|ソース|ケチャップ|マヨ|だし|香辛料|こしょう|わさび|乾物|海苔|のり|わかめ|ふりかけ|ゆかり|ドレッシング|ジャム/,"season"],
+  [/冷凍|アイス/,"frozen"],
+  [/菓子|おやつ|チョコ|クッキー|スナック|ジュース|お茶|麦茶|コーヒー|水|ビール|酒|飲料/,"snack"],
+  [/洗剤|トイレ|ティッシュ|ペーパー|シャンプー|リンス|石鹸|せっけん|歯|掃除|ラップ|ゴミ袋|電池|ボディ|柔軟|アルコール|漂白|アルミ|ホイル|ジップ/,"daily"],
 ];
 function guessCat(name){ for(const[re,c]of GUESS){ if(re.test(name))return c; } return "other"; }
 
-// よく使う候補（初期サジェスト・我が家の定番に合わせて調整）
-const COMMON = [
-  "豚肉","鶏肉","魚","ハム","ベーコン","ウインナー","練り物",
-  "食パン","その他のパン",
-  "卵","ヨーグルト","ヤクルト","さけるチーズ","マーガリン","納豆","豆腐",
-  "きのこ","じゃがいも","にんじん","玉ねぎ","キャベツ","ブロッコリー","大根","ねぎ","もやし","葉物野菜",
-  "醤油","味噌","マヨネーズ","ケチャップ","ソース","ドレッシング","ふりかけ","ジャム","サラダ油","ごま油","オリーブオイル",
-  "冷凍焼きおにぎり","冷凍おかず",
-  "コーヒー","麦茶",
-  "台所用洗剤","食洗機用洗剤","洗濯洗剤","柔軟剤","アルコール","漂白剤","シャンプー","リンス","キッチンペーパー","ティッシュ","トイレットペーパー"
+// 初回に自動登録する常備品（明示カテゴリ付き・売り場順）。COMMONの元データも兼ねる
+const STOCK_SEED = [
+  // 野菜・果物
+  {name:"きのこ",cat:"veg"},{name:"じゃがいも",cat:"veg"},{name:"にんじん",cat:"veg"},{name:"玉ねぎ",cat:"veg"},
+  {name:"キャベツ",cat:"veg"},{name:"ブロッコリー",cat:"veg"},{name:"大根",cat:"veg"},{name:"ねぎ",cat:"veg"},
+  {name:"もやし",cat:"veg"},{name:"葉物野菜",cat:"veg"},{name:"しょうが",cat:"veg"},{name:"にんにく",cat:"veg"},
+  // 肉・魚
+  {name:"豚肉",cat:"meat"},{name:"鶏肉",cat:"meat"},{name:"魚",cat:"meat"},{name:"ハム",cat:"meat"},
+  {name:"ベーコン",cat:"meat"},{name:"ウインナー",cat:"meat"},{name:"練り物",cat:"meat"},{name:"ツナ",cat:"meat"},
+  // 乳製品・卵
+  {name:"卵",cat:"dairy"},{name:"ヨーグルト",cat:"dairy"},{name:"ヤクルト",cat:"dairy"},{name:"さけるチーズ",cat:"dairy"},
+  {name:"マーガリン",cat:"dairy"},{name:"納豆",cat:"dairy"},{name:"豆腐",cat:"dairy"},
+  // パン・主食
+  {name:"食パン",cat:"bread"},{name:"その他のパン",cat:"bread"},
+  // 調味料・乾物
+  {name:"醤油",cat:"season"},{name:"味噌",cat:"season"},{name:"マヨネーズ",cat:"season"},{name:"ケチャップ",cat:"season"},
+  {name:"ソース",cat:"season"},{name:"ドレッシング",cat:"season"},{name:"焼肉のタレ",cat:"season"},{name:"めんつゆ",cat:"season"},
+  {name:"白だし",cat:"season"},{name:"だしの素",cat:"season"},{name:"コンソメ",cat:"season"},{name:"鶏ガラ",cat:"season"},
+  {name:"みりん",cat:"season"},{name:"調理酒",cat:"season"},{name:"砂糖",cat:"season"},{name:"塩",cat:"season"},
+  {name:"サラダ油",cat:"season"},{name:"ごま油",cat:"season"},{name:"オリーブオイル",cat:"season"},{name:"ごま",cat:"season"},
+  {name:"片栗粉",cat:"season"},{name:"小麦粉",cat:"season"},{name:"パン粉",cat:"season"},{name:"かつお節",cat:"season"},
+  {name:"ふえるワカメ",cat:"season"},{name:"ふりかけ",cat:"season"},{name:"わさび",cat:"season"},{name:"ジャム",cat:"season"},
+  {name:"インスタントスープ",cat:"season"},
+  // 冷凍食品
+  {name:"冷凍焼きおにぎり",cat:"frozen"},{name:"冷凍おかず",cat:"frozen"},{name:"アイス",cat:"frozen"},
+  // お菓子・飲料
+  {name:"コーヒー",cat:"snack"},{name:"麦茶",cat:"snack"},
+  // 日用品
+  {name:"台所用洗剤",cat:"daily"},{name:"食洗機用洗剤",cat:"daily"},{name:"洗濯洗剤",cat:"daily"},{name:"柔軟剤",cat:"daily"},
+  {name:"アルコール",cat:"daily"},{name:"漂白剤",cat:"daily"},{name:"くつ用洗剤",cat:"daily"},{name:"シャンプー",cat:"daily"},
+  {name:"リンス",cat:"daily"},{name:"ボディーソープ",cat:"daily"},{name:"キッチンペーパー",cat:"daily"},{name:"ティッシュ",cat:"daily"},
+  {name:"トイレットペーパー",cat:"daily"},{name:"ラップ(小)",cat:"daily"},{name:"ラップ(大)",cat:"daily"},{name:"アルミホイル",cat:"daily"},
+  {name:"ジップロック",cat:"daily"},{name:"ゴミ袋(大)",cat:"daily"},{name:"ゴミ袋(小)",cat:"daily"},
+  // その他
+  {name:"こんにゃく",cat:"other"},
 ];
+
+// よく使う候補（サジェスト）は初期常備品リストと同じ品揃えにする
+const COMMON = STOCK_SEED.map(s=>s.name);
 
 /* ================= 状態 ================= */
 const LS = {
-  cfg:"kaimono.cfg", me:"kaimono.me", fam:"kaimono.fam", set:"kaimono.set"
+  cfg:"kaimono.cfg", me:"kaimono.me", fam:"kaimono.fam", set:"kaimono.set", seeded:"kaimono.seeded"
 };
 let db, auth, uid=null;
 let me = load(LS.me);                 // {name,color}
@@ -500,6 +530,7 @@ let listItems=[], stockItems=[], histItems=[];
 let unsub=[];
 let setupColor = COLORS[0];
 let itemCatManual=null, stockCatManual=null; // nullなら自動推定に追従
+let seedChecked=false;                // 初回の常備品シード判定は1度だけ
 
 function load(k){ try{return JSON.parse(localStorage.getItem(k));}catch{return null;} }
 function save(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
@@ -577,7 +608,7 @@ function boot(cfg){
   $("#app").style.display="flex";
   initUI();
   onAuthStateChanged(auth, u=>{
-    if(u){ uid=u.uid; setSync(true); listen(); }
+    if(u){ uid=u.uid; setSync(true); listen(); if(!seedChecked){ seedChecked=true; maybeSeedStock(); } }
     else { setSync(false); }
   });
   signInAnonymously(auth).catch(e=>{
@@ -653,6 +684,27 @@ async function addStock(name,catOverride){
     updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
   });
   logHist(`常備品「${name}」を登録`);
+}
+
+// 初回だけ：常備品が空なら定番一式をまとめて登録する
+async function maybeSeedStock(){
+  const key=LS.seeded+"."+fam;
+  if(localStorage.getItem(key)) return;           // この端末では判定済み
+  try{
+    const snap=await getDocs(stockCol());          // サーバー優先で現状を確認
+    if(!snap.empty){ localStorage.setItem(key,"1"); return; } // 既に何かあれば入れない
+    const batch=writeBatch(db);
+    STOCK_SEED.forEach(s=>{
+      batch.set(doc(stockCol()),{
+        name:s.name, category:s.cat, state:"ok",
+        updatedBy:me.name, updatedColor:me.color, updatedAt:serverTimestamp()
+      });
+    });
+    await batch.commit();
+    localStorage.setItem(key,"1");
+    logHist(`常備品リストを初期セット（${STOCK_SEED.length}品）`);
+    toast(`常備品リストを初期セットしました（${STOCK_SEED.length}品）`);
+  }catch(e){ console.error("seed:",e); }            // 失敗時は次回また試す
 }
 
 async function setStock(st,state){
