@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#2F8F6B" />
+<title>おうちの買い物</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#F5F7F4;        /* 清潔な台所の白 */
+    --surface:#FFFFFF;
+    --ink:#23282A;
+    --muted:#7C837C;
+    --line:#E7EAE6;
+    --green:#2F8F6B;     /* アクセント */
+    --green-soft:#E4F1EB;
+    --amber:#E0A93B;     /* 少ない */
+    --amber-soft:#FBF0D8;
+    --red:#DB5A4B;       /* 切れた */
+    --red-soft:#FBE4E1;
+    --shadow:0 1px 2px rgba(35,40,42,.06),0 4px 16px rgba(35,40,42,.05);
+    --radius:16px;
+    --tap:52px;          /* 最小タップ高さ */
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI","Yu Gothic",Meiryo,"Noto Sans JP",system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);
+    line-height:1.5;-webkit-font-smoothing:antialiased;
+    overscroll-behavior-y:none;
+  }
+  h1,h2,h3,.brand{font-family:"Zen Maru Gothic",inherit;font-weight:700;letter-spacing:.02em;}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+  input,textarea,select{font-family:inherit;font-size:16px;} /* 16px＝iOS拡大防止 */
+
+  /* ---------- レイアウト ---------- */
+  .app{max-width:560px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;}
+  header.topbar{
+    position:sticky;top:0;z-index:20;background:var(--bg);
+    padding:14px 18px 10px;display:flex;align-items:center;gap:10px;
+  }
+  .topbar .brand{font-size:19px;display:flex;align-items:center;gap:8px;}
+  .topbar .brand .mark{
+    width:30px;height:30px;border-radius:9px;background:var(--green);
+    display:grid;place-items:center;flex:0 0 auto;
+  }
+  .topbar .brand .mark svg{width:18px;height:18px;}
+  .topbar .spacer{flex:1;}
+  .sync{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);}
+  .dot.on{background:var(--green);}
+  .dot.off{background:var(--red);}
+
+  main{flex:1;padding:4px 14px calc(96px + var(--safe-b));}
+  .view{display:none;}
+  .view.active{display:block;animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  /* ---------- カテゴリ見出し ---------- */
+  .cat{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;color:var(--muted);font-size:13px;font-weight:700;}
+  .cat .emoji{font-size:16px;}
+  .cat .rule{flex:1;height:1px;background:var(--line);}
+
+  /* ---------- 行（リスト項目） ---------- */
+  .row{
+    display:flex;align-items:center;gap:12px;background:var(--surface);
+    border-radius:14px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow);
+    min-height:var(--tap);
+  }
+  .check{
+    width:28px;height:28px;border-radius:9px;border:2px solid var(--line);
+    flex:0 0 auto;display:grid;place-items:center;transition:.15s;background:#fff;
+  }
+  .check.done{background:var(--green);border-color:var(--green);}
+  .check svg{width:16px;height:16px;opacity:0;transform:scale(.6);transition:.15s;}
+  .check.done svg{opacity:1;transform:none;}
+  .row .body{flex:1;min-width:0;}
+  .row .name{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row.done .name{color:var(--muted);text-decoration:line-through;}
+  .row .meta{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .row .who{display:inline-flex;align-items:center;gap:4px;}
+  .who .pip{width:8px;height:8px;border-radius:50%;flex:0 0 auto;}
+  .row .del{width:36px;height:36px;border-radius:10px;flex:0 0 auto;display:grid;place-items:center;color:var(--muted);}
+  .row .del:active{background:var(--bg);}
+
+  /* ---------- 在庫の3状態セグメント（シグネチャ要素） ---------- */
+  .stock-row{align-items:center;}
+  .seg{display:flex;background:var(--bg);border-radius:11px;padding:3px;gap:3px;flex:0 0 auto;}
+  .seg button{
+    min-width:52px;height:38px;border-radius:9px;font-size:13px;font-weight:700;color:var(--muted);
+    display:grid;place-items:center;transition:.15s;padding:0 8px;
+  }
+  .seg button[data-on="ok"].sel{background:var(--green);color:#fff;}
+  .seg button[data-on="low"].sel{background:var(--amber);color:#fff;}
+  .seg button[data-on="out"].sel{background:var(--red);color:#fff;}
+
+  /* ---------- 空状態 ---------- */
+  .empty{text-align:center;color:var(--muted);padding:48px 24px;}
+  .empty .big{font-size:40px;margin-bottom:10px;}
+  .empty p{margin:4px 0;font-size:14px;}
+
+  /* ---------- 履歴 ---------- */
+  .hist{display:flex;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);align-items:flex-start;}
+  .hist .pip{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:0 0 auto;}
+  .hist .txt{flex:1;font-size:14px;}
+  .hist .t{font-size:11.5px;color:var(--muted);margin-top:1px;}
+
+  /* ---------- 設定 ---------- */
+  .card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin:12px 0;}
+  .card h3{margin:0 0 12px;font-size:15px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px;font-weight:700;}
+  .field input,.field textarea,.field select{
+    width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);
+  }
+  .field textarea{min-height:120px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;}
+  .radios{display:flex;flex-direction:column;gap:8px;}
+  .radios label{
+    display:flex;gap:10px;align-items:flex-start;padding:12px;border:1.5px solid var(--line);
+    border-radius:12px;cursor:pointer;font-size:14px;color:var(--ink);font-weight:400;
+  }
+  .radios label.sel{border-color:var(--green);background:var(--green-soft);}
+  .radios input{margin-top:2px;}
+  .radios .sub{display:block;font-size:12px;color:var(--muted);margin-top:2px;}
+  .swatches{display:flex;gap:8px;flex-wrap:wrap;}
+  .swatches button{width:34px;height:34px;border-radius:50%;border:3px solid transparent;}
+  .swatches button.sel{border-color:var(--ink);}
+
+  /* ---------- ボタン ---------- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--green);color:#fff;font-weight:700;font-size:15px;
+    padding:13px 18px;border-radius:13px;width:100%;min-height:var(--tap);
+  }
+  .btn:active{filter:brightness(.95);}
+  .btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line);}
+  .btn.mini{width:auto;padding:10px 14px;font-size:14px;}
+  .btn:disabled{opacity:.5;}
+  .row-btns{display:flex;gap:10px;}
+
+  /* ---------- 追加バー（下部固定） ---------- */
+  .addbar{
+    position:fixed;left:0;right:0;bottom:calc(64px + var(--safe-b));z-index:15;
+    max-width:560px;margin:0 auto;padding:0 14px;pointer-events:none;
+  }
+  .addbar .inner{
+    pointer-events:auto;background:var(--surface);border-radius:16px;box-shadow:0 6px 24px rgba(35,40,42,.16);
+    padding:8px;display:flex;gap:8px;align-items:center;border:1px solid var(--line);
+  }
+  .addbar input{flex:1;border:none;padding:12px;background:transparent;}
+  .addbar input:focus{outline:none;}
+  .addbar .go{width:44px;height:44px;border-radius:12px;background:var(--green);color:#fff;display:grid;place-items:center;flex:0 0 auto;}
+  .sugg{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;pointer-events:auto;-ms-overflow-style:none;scrollbar-width:none;}
+  .sugg::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:0 0 auto;background:var(--surface);border:1px solid var(--line);border-radius:999px;
+    padding:8px 14px;font-size:14px;box-shadow:var(--shadow);white-space:nowrap;
+  }
+  .chip:active{background:var(--green-soft);}
+
+  /* ---------- 下部ナビ ---------- */
+  nav.tabs{
+    position:fixed;left:0;right:0;bottom:0;z-index:18;max-width:560px;margin:0 auto;
+    background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-top:1px solid var(--line);
+    display:flex;padding-bottom:var(--safe-b);
+  }
+  nav.tabs button{
+    flex:1;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:3px;
+    color:var(--muted);font-size:11px;font-weight:700;
+  }
+  nav.tabs button svg{width:23px;height:23px;}
+  nav.tabs button.sel{color:var(--green);}
+  .badge{position:absolute;transform:translate(12px,-4px);background:var(--red);color:#fff;font-size:10px;
+    min-width:16px;height:16px;border-radius:8px;display:grid;place-items:center;padding:0 4px;font-weight:700;}
+
+  /* ---------- セクションタイトル ---------- */
+  .section-title{display:flex;align-items:center;justify-content:space-between;margin:8px 4px 2px;}
+  .section-title h2{font-size:18px;margin:0;}
+  .count{font-size:13px;color:var(--muted);}
+
+  /* ---------- トースト ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:calc(140px + var(--safe-b));transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;
+    opacity:0;transition:.25s;pointer-events:none;max-width:90%;text-align:center;box-shadow:var(--shadow);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---------- 設定オーバーレイ（初回セットアップ） ---------- */
+  .setup{position:fixed;inset:0;background:var(--bg);z-index:100;overflow-y:auto;display:none;}
+  .setup.show{display:block;}
+  .setup .wrap{max-width:520px;margin:0 auto;padding:32px 20px 40px;}
+  .setup h1{font-size:24px;margin:0 0 6px;}
+  .setup .lead{color:var(--muted);font-size:14px;margin-bottom:22px;}
+  .setup .step{font-size:12px;color:var(--green);font-weight:700;margin-bottom:6px;}
+  details.help{margin:10px 0 2px;font-size:13px;color:var(--muted);}
+  details.help summary{cursor:pointer;color:var(--green);font-weight:700;}
+  details.help ol{margin:8px 0;padding-left:20px;line-height:1.8;}
+  code.k{background:var(--green-soft);padding:1px 6px;border-radius:6px;font-size:12px;}
+
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important;}}
+</style>
+</head>
+<body>
+
+<!-- ======================= 初回セットアップ ======================= -->
+<div class="setup" id="setup">
+  <div class="wrap">
+    <h1>おうちの買い物</h1>
+    <p class="lead">家族で共有する買い物・在庫リスト。最初に一度だけ設定します。</p>
+
+    <div class="card" id="setupConfig">
+      <div class="step">STEP 1 ・ Firebase設定を貼り付け</div>
+      <h3>接続情報</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px;">
+        FirebaseコンソールでWebアプリを1つ登録し、表示された <code class="k">firebaseConfig</code> をまるごと貼り付けてください。
+      </p>
+      <details class="help">
+        <summary>手順を見る</summary>
+        <ol>
+          <li><b>console.firebase.google.com</b> でプロジェクトを新規作成（無料）</li>
+          <li>「ビルド ＞ Firestore Database」を作成（本番モードでOK）</li>
+          <li>「ビルド ＞ Authentication」を有効化し、<b>匿名</b>ログインをオンに</li>
+          <li>プロジェクト設定で「アプリ（&lt;/&gt;）」を追加し、表示される <code class="k">firebaseConfig</code> をコピー</li>
+          <li>Firestoreの「ルール」に、下の説明にあるセキュリティルールを貼って公開</li>
+          <li>「Authentication ＞ Settings ＞ 承認済みドメイン」に、公開先（Netlify）のドメインを追加</li>
+        </ol>
+      </details>
+      <div class="field" style="margin-top:12px;">
+        <label>firebaseConfig（{ ... } のかたまり全体）</label>
+        <textarea id="cfgInput" placeholder="const firebaseConfig = {&#10;  apiKey: &quot;...&quot;,&#10;  authDomain: &quot;...&quot;,&#10;  projectId: &quot;...&quot;,&#10;  ...&#10;};"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="step">STEP 2 ・ あなたと家族</div>
+      <h3>プロフィール</h3>
+      <div class="field">
+        <label>あなたの名前（リストに「誰が」で表示）</label>
+        <input id="nameInput" placeholder="例：お母さん / たろう" maxlength="12" />
+      </div>
+      <div class="field">
+        <label>色（家族の中での目印）</label>
+        <div class="swatches" id="swatches"></div>
+      </div>
+      <div class="field">
+        <label>家族コード（同じ言葉を家族全員で使う＝同じリストに繋がる）</label>
+        <input id="famInput" placeholder="例：yamada-home" maxlength="40" />
+        <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+          このコードを知っている人だけがリストを見られます。推測されにくい言葉にして、家族にだけ伝えてください。
+        </p>
+      </div>
+    </div>
+
+    <button class="btn" id="setupGo">はじめる</button>
+    <p id="setupErr" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none;"></p>
+  </div>
+</div>
+
+<!-- ======================= 本体 ======================= -->
+<div class="app" id="app" style="display:none;">
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6 5 3H3"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>
+      </span>
+      <span>おうちの買い物</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">接続中…</span></div>
+  </header>
+
+  <main>
+    <!-- 買い物リスト -->
+    <section class="view active" id="view-list">
+      <div class="section-title"><h2>買い物リスト</h2><span class="count" id="listCount"></span></div>
+      <div id="listBody"></div>
+      <div id="doneBody"></div>
+    </section>
+
+    <!-- 在庫 -->
+    <section class="view" id="view-stock">
+      <div class="section-title"><h2>在庫（常備品）</h2><span class="count" id="stockCount"></span></div>
+      <p style="font-size:13px;color:var(--muted);margin:2px 4px 8px;">「切れた」にすると買い物リストへ自動で追加されます。</p>
+      <div id="stockBody"></div>
+      <div class="addbar" style="position:static;padding:0;margin-top:10px;">
+        <div class="inner" style="box-shadow:var(--shadow);">
+          <input id="stockAdd" placeholder="常備品を追加（例：牛乳）" />
+          <button class="go" id="stockAddGo" aria-label="追加">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 履歴 -->
+    <section class="view" id="view-hist">
+      <div class="section-title"><h2>更新の履歴</h2></div>
+      <div id="histBody"></div>
+    </section>
+
+    <!-- 設定 -->
+    <section class="view" id="view-set">
+      <div class="section-title"><h2>設定</h2></div>
+
+      <div class="card">
+        <h3>買い物を頼む</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">
+          いまのリストを家族に「買ってきて」と知らせます。（通知の実際の配信は後から有効化：下の「通知」参照）
+        </p>
+        <button class="btn" id="errandBtn">お使いを頼む</button>
+      </div>
+
+      <div class="card">
+        <h3>通知の鳴らし方</h3>
+        <div class="radios" id="notifyRadios">
+          <label data-v="errand"><input type="radio" name="nt" value="errand"><span><b>お使い依頼型</b><span class="sub">「お使いを頼む」を押した時だけ、まとめて1回。いちばん静か。</span></span></label>
+          <label data-v="digest"><input type="radio" name="nt" value="digest"><span><b>まとめ型</b><span class="sub">追加を少しためて、間引いて自動でお知らせ。</span></span></label>
+          <label data-v="out"><input type="radio" name="nt" value="out"><span><b>「切れた」だけ</b><span class="sub">常備品が切れた時のみ。それ以外は静か。</span></span></label>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin:12px 0 0;">
+          ※ プッシュ通知の配信そのものは、公開後に別途「有効化」します（この設定はいつでも切り替えられます）。
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>プロフィール</h3>
+        <div class="field"><label>名前</label><input id="setName" maxlength="12" /></div>
+        <div class="field"><label>色</label><div class="swatches" id="setSwatches"></div></div>
+        <button class="btn ghost mini" id="saveProfile">名前と色を保存</button>
+      </div>
+
+      <div class="card">
+        <h3>家族への招待</h3>
+        <div class="field"><label>家族コード</label><input id="setFam" readonly /></div>
+        <button class="btn ghost mini" id="shareFam">コードを共有</button>
+      </div>
+
+      <div class="card">
+        <h3>バックアップ</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">全データをJSONで書き出し・読み込みできます。</p>
+        <div class="row-btns">
+          <button class="btn ghost mini" id="exportBtn" style="flex:1;">書き出す</button>
+          <button class="btn ghost mini" id="importBtn" style="flex:1;">読み込む</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json" style="display:none;" />
+      </div>
+
+      <div class="card" id="installCard" style="display:none;">
+        <h3>ホーム画面に追加</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">アプリとして開けるようになり、通知も安定します。</p>
+        <button class="btn" id="installBtn">追加する</button>
+      </div>
+
+      <div class="card">
+        <h3>接続</h3>
+        <button class="btn ghost mini" id="reconfigBtn">Firebase設定をやり直す</button>
+      </div>
+      <p style="text-align:center;color:var(--muted);font-size:12px;margin:18px 0;">おうちの買い物 ・ v1.0</p>
+    </section>
+  </main>
+
+  <!-- 追加バー（買い物リスト時のみ表示） -->
+  <div class="addbar" id="addbar">
+    <div class="sugg" id="sugg"></div>
+    <div class="inner">
+      <input id="itemAdd" placeholder="買うものを追加" />
+      <button class="go" id="itemAddGo" aria-label="追加">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button data-tab="list" class="sel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      買い物
+    </button>
+    <button data-tab="stock">
+      <span style="position:relative;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+        <span class="badge" id="stockBadge" style="display:none;">0</span>
+      </span>
+      在庫
+    </button>
+    <button data-tab="hist">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+      履歴
+    </button>
+    <button data-tab="set">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 7 2.6h.1A1.6 1.6 0 0 0 8.5 1V.9a2 2 0 0 1 4 0V1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.1a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" transform="scale(.86) translate(2 2)"/></svg>
+      設定
+    </button>
+  </nav>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+  serverTimestamp, getDocs, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ================= 定数 ================= */
+const CATS = [
+  { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
+  { id:"meat",  name:"肉・魚",       emoji:"🥩" },
+  { id:"dairy", name:"乳製品・卵",   emoji:"🥛" },
+  { id:"bread", name:"パン・主食",   emoji:"🍞" },
+  { id:"season",name:"調味料・乾物", emoji:"🧂" },
+  { id:"frozen",name:"冷凍食品",     emoji:"🧊" },
+  { id:"snack", name:"お菓子・飲料", emoji:"🍵" },
+  { id:"daily", name:"日用品",       emoji:"🧻" },
+  { id:"other", name:"その他",       emoji:"🛒" },
+];
+const CAT_ORDER = CATS.map(c=>c.id);
+const CAT_MAP = Object.fromEntries(CATS.map(c=>[c.id,c]));
+const COLORS = ["#2F8F6B","#E0A93B","#DB5A4B","#4E7CC0","#9B6DC7","#D9739B","#5FA85F","#6B7280"];
+
+// キーワード→カテゴリの簡易推定
+const GUESS = [
+  [/牛乳|ヨーグルト|チーズ|バター|卵|たまご|ミルク/,"dairy"],
+  [/肉|豚|牛|鶏|とり|ひき|魚|さかな|鮭|さば|まぐろ|えび|刺身|ベーコン|ハム|ソーセージ|ウインナー/,"meat"],
+  [/野菜|菜|トマト|きゅうり|なす|人参|にんじん|玉ねぎ|たまねぎ|じゃがいも|キャベツ|レタス|ねぎ|ほうれん草|ピーマン|大根|きのこ|果物|りんご|バナナ|みかん|いちご|レモン/,"veg"],
+  [/パン|米|こめ|ごはん|麺|めん|パスタ|うどん|そば|ラーメン|シリアル|小麦粉|粉/,"bread"],
+  [/塩|しお|砂糖|さとう|醤油|しょうゆ|味噌|みそ|酢|油|ソース|ケチャップ|マヨ|だし|コンソメ|香辛料|こしょう|わさび|乾物|海苔|のり|わかめ/,"season"],
+  [/冷凍/,"frozen"],
+  [/菓子|おやつ|チョコ|クッキー|スナック|アイス|ジュース|お茶|コーヒー|水|ビール|酒|飲料/,"snack"],
+  [/洗剤|トイレ|ティッシュ|ペーパー|シャンプー|石鹸|せっけん|歯|掃除|ラップ|ゴミ袋|電池|ボディ|柔軟/,"daily"],
+];
+function guessCat(name){ for(const[re,c]of GUESS){ if(re.test(name))return c; } return "other"; }
+
+// よく使う候補（初期サジェスト）
+const COMMON = ["牛乳","卵","食パン","米","ヨーグルト","バター","納豆","豆腐","トマト","玉ねぎ","にんじん","キャベツ","鶏肉","豚肉","醤油","味噌","油","洗剤","ティッシュ","トイレットペーパー"];
+
+/* ================= 状態 ================= */
+const LS = {
+  cfg:"kaimono.cfg", me:"kaimono.me", fam:"kaimono.fam", set:"kaimono.set"
+};
+let db, auth, uid=null;
+let me = load(LS.me);                 // {name,color}
+let fam = localStorage.getItem(LS.fam);
+let settings = load(LS.set) || { notify:"errand" };
+let listItems=[], stockItems=[], histItems=[];
+let unsub=[];
+let setupColor = COLORS[0];
+
+function load(k){ try{return JSON.parse(localStorage.getItem(k));}catch{return null;} }
+function save(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
+const $ = s=>document.querySelector(s);
+const $$ = s=>[...document.querySelectorAll(s)];
+
+/* ================= 起動 ================= */
+if (load(LS.cfg) && me && fam) {
+  boot(load(LS.cfg));
+} else {
+  showSetup();
+}
+
+/* ================= セットアップ画面 ================= */
+function showSetup(){
+  $("#setup").classList.add("show");
+  $("#app").style.display="none";
+  // 色スウォッチ
+  const sw = $("#swatches"); sw.innerHTML="";
+  COLORS.forEach((c,i)=>{
+    const b=document.createElement("button");
+    b.style.background=c; if(i===0)b.classList.add("sel");
+    b.onclick=()=>{ setupColor=c; $$("#swatches button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); };
+    sw.appendChild(b);
+  });
+  // 既存値があれば復元（再設定時）
+  if(me){ $("#nameInput").value=me.name||""; }
+  if(fam){ $("#famInput").value=fam; }
+}
+
+$("#setupGo").onclick=()=>{
+  const err=$("#setupErr");
+  const raw=$("#cfgInput").value.trim();
+  const name=$("#nameInput").value.trim();
+  const famv=$("#famInput").value.trim().toLowerCase().replace(/\s+/g,"-");
+  const cfg=parseConfig(raw) || load(LS.cfg); // 再設定で空なら既存を流用
+  if(!cfg){ return fail("Firebase設定が読み取れません。{ ... } のかたまりをそのまま貼り付けてください。"); }
+  if(!cfg.projectId||!cfg.apiKey){ return fail("設定に apiKey / projectId が見つかりません。コピーし直してください。"); }
+  if(!name){ return fail("名前を入力してください。"); }
+  if(!famv){ return fail("家族コードを入力してください。"); }
+  save(LS.cfg,cfg); save(LS.me,{name,color:setupColor}); localStorage.setItem(LS.fam,famv); save(LS.set,settings);
+  me={name,color:setupColor}; fam=famv;
+  err.style.display="none";
+  $("#setup").classList.remove("show");
+  boot(cfg);
+  function fail(m){ err.textContent=m; err.style.display="block"; }
+};
+
+// 貼り付けた firebaseConfig を柔軟に解釈（const宣言・JS表記・JSON いずれもOK）
+function parseConfig(raw){
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch{}
+  // { ... } 部分を抜き出す
+  const m = raw.match(/\{[\s\S]*\}/);
+  if(!m) return null;
+  let body = m[0];
+  try{
+    // JS表記（キーがクォート無し・末尾カンマ等）を評価
+    const obj = Function('"use strict";return ('+body+')')();
+    if(obj && typeof obj==="object") return obj;
+  }catch{}
+  return null;
+}
+
+/* ================= Firebase 初期化 ================= */
+function boot(cfg){
+  try{
+    const app=initializeApp(cfg);
+    auth=getAuth(app);
+    db=initializeFirestore(app,{ localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()}) });
+  }catch(e){
+    alert("Firebaseの初期化に失敗しました。設定をやり直してください。\n"+e.message);
+    showSetup(); return;
+  }
+  $("#app").style.display="flex";
+  initUI();
+  onAuthStateChanged(auth, u=>{
+    if(u){ uid=u.uid; setSync(true); listen(); }
+    else { setSync(false); }
+  });
+  signInAnonymously(auth).catch(e=>{
+    setSync(false);
+    toast("ログインに失敗（承認済みドメイン/匿名認証を確認）");
+    console.error(e);
+  });
+}
+
+function setSync(ok){
+  const d=$("#syncDot"), t=$("#syncTxt");
+  d.className="dot "+(ok?"on":"off");
+  t.textContent=ok?"同期中":"未接続";
+}
+
+/* ================= Firestore 参照 ================= */
+const listCol = ()=>collection(db,"families",fam,"list");
+const stockCol= ()=>collection(db,"families",fam,"stock");
+const histCol = ()=>collection(db,"families",fam,"history");
+
+function listen(){
+  unsub.forEach(u=>u&&u()); unsub=[];
+  unsub.push(onSnapshot(query(listCol(),orderBy("addedAt","asc")), snap=>{
+    listItems=snap.docs.map(d=>({id:d.id,...d.data()})); renderList(); refreshSugg();
+  }, err=>{ console.error(err); toast("読み込みエラー（ルールを確認）"); }));
+  unsub.push(onSnapshot(query(stockCol(),orderBy("name","asc")), snap=>{
+    stockItems=snap.docs.map(d=>({id:d.id,...d.data()})); renderStock(); refreshSugg();
+  }));
+  unsub.push(onSnapshot(query(histCol(),orderBy("at","desc")), snap=>{
+    histItems=snap.docs.map(d=>({id:d.id,...d.data()})).slice(0,80); renderHist();
+  }));
+}
+
+/* ================= 操作 ================= */
+async function addItem(name){
+  name=name.trim(); if(!name)return;
+  // 既にリストに未購入で存在するなら二重追加しない
+  if(listItems.some(i=>!i.checked && i.name===name)){ toast("すでにリストにあります"); return; }
+  const cat=guessCat(name);
+  await addDoc(listCol(),{
+    name,category:cat,checked:false,
+    addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
+    updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
+  });
+  logHist(`「${name}」をリストに追加`);
+  if(settings.notify==="digest") queueDigest(name);
+}
+
+async function toggleItem(it){
+  const done=!it.checked;
+  await updateDoc(doc(listCol(),it.id),{
+    checked:done,updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
+  });
+  if(done){
+    logHist(`「${it.name}」を買った`);
+    // 閉ループ：同名の常備品があれば「ある」に戻す
+    const st=stockItems.find(s=>s.name===it.name);
+    if(st && st.state!=="ok"){
+      await updateDoc(doc(stockCol(),st.id),{state:"ok",updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
+    }
+  }
+}
+
+async function delItem(it){
+  await deleteDoc(doc(listCol(),it.id));
+}
+
+async function addStock(name){
+  name=name.trim(); if(!name)return;
+  if(stockItems.some(s=>s.name===name)){ toast("すでに登録済みです"); return; }
+  await addDoc(stockCol(),{
+    name,category:guessCat(name),state:"ok",
+    updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
+  });
+  logHist(`常備品「${name}」を登録`);
+}
+
+async function setStock(st,state){
+  if(st.state===state)return;
+  await updateDoc(doc(stockCol(),st.id),{state,updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
+  if(state==="out"){
+    logHist(`「${st.name}」が切れた`);
+    // 閉ループ：買い物リストへ自動追加
+    if(!listItems.some(i=>!i.checked && i.name===st.name)){
+      await addDoc(listCol(),{
+        name:st.name,category:st.category||guessCat(st.name),checked:false,
+        addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
+        updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp(),fromStock:true
+      });
+      toast(`「${st.name}」を買い物リストへ追加`);
+    }
+    if(settings.notify==="out") pushStub(`「${st.name}」が切れました`);
+  }
+}
+
+async function delStock(st){ await deleteDoc(doc(stockCol(),st.id)); }
+
+async function logHist(text){
+  try{ await addDoc(histCol(),{text,by:me.name,color:me.color,at:serverTimestamp()}); }catch{}
+}
+
+/* 通知（配信は後から有効化するためのスタブ） */
+function pushStub(msg){
+  // TODO: ここで OneSignal などの Web プッシュ送信を呼ぶ（公開後に有効化）
+  console.log("[通知予定]",msg);
+}
+let digestTimer=null, digestBuf=[];
+function queueDigest(name){
+  digestBuf.push(name);
+  clearTimeout(digestTimer);
+  digestTimer=setTimeout(()=>{ pushStub(`新しく${digestBuf.length}件追加されました`); digestBuf=[]; },1000*60*5);
+}
+
+/* ================= 描画：買い物リスト ================= */
+function renderList(){
+  const active=listItems.filter(i=>!i.checked);
+  const done=listItems.filter(i=>i.checked);
+  $("#listCount").textContent=active.length?`${active.length}件`:"";
+  const body=$("#listBody"); body.innerHTML="";
+
+  if(active.length===0 && done.length===0){
+    body.innerHTML=`<div class="empty"><div class="big">🧺</div><p>リストは空です</p><p>下の入力から買うものを追加しましょう</p></div>`;
+  }else{
+    // カテゴリごと・売り場順
+    for(const cid of CAT_ORDER){
+      const items=active.filter(i=>i.category===cid);
+      if(!items.length)continue;
+      const c=CAT_MAP[cid];
+      const h=document.createElement("div"); h.className="cat";
+      h.innerHTML=`<span class="emoji">${c.emoji}</span>${c.name}<span class="rule"></span>`;
+      body.appendChild(h);
+      items.forEach(it=>body.appendChild(itemRow(it)));
+    }
+  }
+  // 購入済み
+  const dbody=$("#doneBody"); dbody.innerHTML="";
+  if(done.length){
+    const h=document.createElement("div"); h.className="cat";
+    h.innerHTML=`<span class="emoji">✓</span>買ったもの（${done.length}）<span class="rule"></span>`;
+    dbody.appendChild(h);
+    done.forEach(it=>dbody.appendChild(itemRow(it)));
+  }
+}
+
+function itemRow(it){
+  const row=document.createElement("div");
+  row.className="row"+(it.checked?" done":"");
+  const chk=document.createElement("div");
+  chk.className="check"+(it.checked?" done":"");
+  chk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>`;
+  chk.onclick=()=>toggleItem(it);
+  const b=document.createElement("div"); b.className="body";
+  const who = it.checked
+    ? `${it.updatedBy||""}が買った ・ ${rel(it.updatedAt)}`
+    : `${it.addedBy||""} ・ ${rel(it.addedAt)}`;
+  b.innerHTML=`<div class="name">${esc(it.name)}</div>
+    <div class="meta"><span class="who"><span class="pip" style="background:${it.checked?(it.updatedColor||'#ccc'):(it.addedColor||'#ccc')}"></span>${esc(who)}</span></div>`;
+  const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","削除");
+  del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
+  del.onclick=()=>delItem(it);
+  row.append(chk,b,del);
+  return row;
+}
+
+/* ================= 描画：在庫 ================= */
+function renderStock(){
+  const out=stockItems.filter(s=>s.state==="out").length;
+  const low=stockItems.filter(s=>s.state==="low").length;
+  $("#stockCount").textContent=stockItems.length?`${stockItems.length}品`:"";
+  const badge=$("#stockBadge");
+  if(out+low>0){ badge.style.display="grid"; badge.textContent=out+low; }
+  else badge.style.display="none";
+
+  const body=$("#stockBody"); body.innerHTML="";
+  if(!stockItems.length){
+    body.innerHTML=`<div class="empty"><div class="big">📦</div><p>常備品はまだありません</p><p>いつも切らしたくない物を登録しておくと便利です</p></div>`;
+    return;
+  }
+  // カテゴリ順
+  for(const cid of CAT_ORDER){
+    const items=stockItems.filter(s=>s.category===cid);
+    if(!items.length)continue;
+    const c=CAT_MAP[cid];
+    const h=document.createElement("div"); h.className="cat";
+    h.innerHTML=`<span class="emoji">${c.emoji}</span>${c.name}<span class="rule"></span>`;
+    body.appendChild(h);
+    items.forEach(st=>body.appendChild(stockRow(st)));
+  }
+}
+
+function stockRow(st){
+  const row=document.createElement("div"); row.className="row stock-row";
+  const b=document.createElement("div"); b.className="body";
+  b.innerHTML=`<div class="name">${esc(st.name)}</div>
+    <div class="meta"><span class="who"><span class="pip" style="background:${st.updatedColor||'#ccc'}"></span>${esc(st.updatedBy||"")} ・ ${rel(st.updatedAt)}</span></div>`;
+  const seg=document.createElement("div"); seg.className="seg";
+  [["ok","ある"],["low","少ない"],["out","切れた"]].forEach(([v,label])=>{
+    const bt=document.createElement("button"); bt.dataset.on=v; bt.textContent=label;
+    if(st.state===v)bt.classList.add("sel");
+    bt.onclick=()=>setStock(st,v);
+    seg.appendChild(bt);
+  });
+  // 長押しで削除
+  let t;
+  row.onpointerdown=e=>{ t=setTimeout(()=>{ if(confirm(`「${st.name}」を常備品から削除しますか？`))delStock(st); },600); };
+  row.onpointerup=()=>clearTimeout(t);
+  row.onpointerleave=()=>clearTimeout(t);
+  row.append(b,seg);
+  return row;
+}
+
+/* ================= 描画：履歴 ================= */
+function renderHist(){
+  const body=$("#histBody"); body.innerHTML="";
+  if(!histItems.length){
+    body.innerHTML=`<div class="empty"><div class="big">🕓</div><p>まだ履歴はありません</p></div>`;
+    return;
+  }
+  histItems.forEach(h=>{
+    const el=document.createElement("div"); el.className="hist";
+    el.innerHTML=`<span class="pip" style="background:${h.color||'#ccc'}"></span>
+      <div class="txt">${esc(h.text)}<div class="t">${esc(h.by||"")} ・ ${rel(h.at)}</div></div>`;
+    body.appendChild(el);
+  });
+}
+
+/* ================= サジェスト ================= */
+function refreshSugg(){
+  const box=$("#sugg"); if(!box)return;
+  const typed=$("#itemAdd").value.trim();
+  const onList=new Set(listItems.filter(i=>!i.checked).map(i=>i.name));
+  // 候補源：常備品 → 過去の履歴的な名前（購入済み含む） → COMMON
+  const past=[...new Set(listItems.map(i=>i.name))];
+  const pool=[...new Set([...stockItems.map(s=>s.name),...past,...COMMON])]
+    .filter(n=>!onList.has(n))
+    .filter(n=>!typed || n.includes(typed));
+  box.innerHTML="";
+  pool.slice(0,12).forEach(n=>{
+    const c=document.createElement("button"); c.className="chip"; c.textContent=n;
+    c.onclick=()=>{ addItem(n); $("#itemAdd").value=""; refreshSugg(); };
+    box.appendChild(c);
+  });
+  box.style.display=pool.length?"flex":"none";
+}
+
+/* ================= UI 初期化 ================= */
+function initUI(){
+  // タブ
+  $$("nav.tabs button").forEach(b=>{
+    b.onclick=()=>{
+      $$("nav.tabs button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel");
+      $$(".view").forEach(v=>v.classList.remove("active"));
+      $("#view-"+b.dataset.tab).classList.add("active");
+      $("#addbar").style.display = b.dataset.tab==="list" ? "block":"none";
+      window.scrollTo(0,0);
+    };
+  });
+  // 追加：買い物
+  const doAdd=()=>{ const v=$("#itemAdd").value; if(v.trim()){addItem(v);$("#itemAdd").value="";refreshSugg();} };
+  $("#itemAddGo").onclick=doAdd;
+  $("#itemAdd").addEventListener("keydown",e=>{ if(e.key==="Enter")doAdd(); });
+  $("#itemAdd").addEventListener("input",refreshSugg);
+  // 追加：在庫
+  const doStock=()=>{ const v=$("#stockAdd").value; if(v.trim()){addStock(v);$("#stockAdd").value="";} };
+  $("#stockAddGo").onclick=doStock;
+  $("#stockAdd").addEventListener("keydown",e=>{ if(e.key==="Enter")doStock(); });
+
+  // 通知ラジオ
+  $$('#notifyRadios input').forEach(r=>{
+    if(r.value===settings.notify) r.closest("label").classList.add("sel"), r.checked=true;
+    r.onchange=()=>{
+      settings.notify=r.value; save(LS.set,settings);
+      $$('#notifyRadios label').forEach(l=>l.classList.remove("sel"));
+      r.closest("label").classList.add("sel");
+      toast("通知の設定を保存しました");
+    };
+  });
+
+  // お使いを頼む
+  $("#errandBtn").onclick=()=>{
+    const active=listItems.filter(i=>!i.checked);
+    if(!active.length){ toast("リストが空です"); return; }
+    logHist(`${me.name}がお使いを頼みました（${active.length}件）`);
+    pushStub(`買い物をお願い：${active.map(i=>i.name).slice(0,5).join("、")}${active.length>5?" ほか":""}`);
+    toast("家族に伝えました（通知配信は有効化後）");
+  };
+
+  // プロフィール（設定内）
+  $("#setName").value=me.name;
+  const ssw=$("#setSwatches"); ssw.innerHTML="";
+  let profColor=me.color;
+  COLORS.forEach(c=>{
+    const b=document.createElement("button"); b.style.background=c;
+    if(c===me.color)b.classList.add("sel");
+    b.onclick=()=>{ profColor=c; $$("#setSwatches button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); };
+    ssw.appendChild(b);
+  });
+  $("#saveProfile").onclick=()=>{
+    const n=$("#setName").value.trim()||me.name;
+    me={name:n,color:profColor}; save(LS.me,me); toast("保存しました");
+  };
+
+  // 家族コード
+  $("#setFam").value=fam;
+  $("#shareFam").onclick=async()=>{
+    const url=location.origin+location.pathname;
+    const text=`「おうちの買い物」の家族コード：${fam}\n${url}`;
+    if(navigator.share){ try{ await navigator.share({title:"おうちの買い物",text}); }catch{} }
+    else { await navigator.clipboard?.writeText(text); toast("コードをコピーしました"); }
+  };
+
+  // バックアップ
+  $("#exportBtn").onclick=exportData;
+  $("#importBtn").onclick=()=>$("#importFile").click();
+  $("#importFile").onchange=importData;
+
+  // 再設定
+  $("#reconfigBtn").onclick=()=>{ showSetup(); };
+
+  // PWAインストール
+  setupInstall();
+
+  // 初期タブ表示（買い物）
+  $("#addbar").style.display="block";
+}
+
+/* ================= バックアップ ================= */
+async function exportData(){
+  const data={ version:1, exportedAt:new Date().toISOString(), family:fam,
+    list:listItems, stock:stockItems };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`kaimono-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); toast("書き出しました");
+}
+async function importData(e){
+  const f=e.target.files[0]; if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(!confirm("読み込むと現在の在庫リストに項目が追加されます。よろしいですか？"))return;
+    const batch=writeBatch(db);
+    (data.stock||[]).forEach(s=>{
+      if(stockItems.some(x=>x.name===s.name))return;
+      batch.set(doc(stockCol()),{name:s.name,category:s.category||guessCat(s.name),state:s.state||"ok",
+        updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
+    });
+    (data.list||[]).forEach(i=>{
+      if(i.checked)return;
+      if(listItems.some(x=>!x.checked&&x.name===i.name))return;
+      batch.set(doc(listCol()),{name:i.name,category:i.category||guessCat(i.name),checked:false,
+        addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
+        updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
+    });
+    await batch.commit(); toast("読み込みました");
+  }catch(err){ toast("読み込みに失敗しました"); console.error(err); }
+  e.target.value="";
+}
+
+/* ================= PWA インストール ================= */
+let deferredPrompt=null;
+function setupInstall(){
+  window.addEventListener("beforeinstallprompt",e=>{
+    e.preventDefault(); deferredPrompt=e; $("#installCard").style.display="block";
+  });
+  $("#installBtn").onclick=async()=>{
+    if(!deferredPrompt)return;
+    deferredPrompt.prompt(); await deferredPrompt.userChoice;
+    deferredPrompt=null; $("#installCard").style.display="none";
+  };
+  window.addEventListener("appinstalled",()=>$("#installCard").style.display="none");
+}
+
+/* ================= ユーティリティ ================= */
+function esc(s){ return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function rel(ts){
+  if(!ts||!ts.toDate)return "…";
+  const d=ts.toDate(), now=Date.now(), diff=(now-d.getTime())/1000;
+  if(diff<60)return "さっき";
+  if(diff<3600)return Math.floor(diff/60)+"分前";
+  if(diff<86400)return Math.floor(diff/3600)+"時間前";
+  if(diff<172800)return "昨日";
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+let toastT;
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+/* ================= Service Worker 登録 ================= */
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("sw.js").catch(e=>console.log("SW:",e));
+  });
+}
+</script>
+</body>
+</html>
