@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.3.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.4.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -447,7 +447,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.3.0";
+const VERSION = "v1.4.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -537,12 +537,26 @@ function save(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
 const $ = s=>document.querySelector(s);
 const $$ = s=>[...document.querySelectorAll(s)];
 
-/* ================= 起動 ================= */
-if (load(LS.cfg) && me && fam) {
-  boot(load(LS.cfg));
-} else {
-  showSetup();
+/* ================= デモ（テスト）モード =================
+   URLに ?demo=1 が付いているときだけ有効。Firebaseを使わず端末内の仮データで動く。
+   レイアウトやデータの動き（追加/削除/初回登録など）を接続情報なしで確認するためのもの。
+   通常の利用（?demo なし）には一切影響しない。 */
+const DEMO = new URLSearchParams(location.search).has("demo");
+let demoId = 1;
+const demoTs = ()=>{ const d=new Date(); return { toDate:()=>d }; };  // rel() が使う .toDate を持つ擬似Timestamp
+function demoRender(){ renderList(); renderStock(); renderHist(); refreshSugg(); }
+function startDemo(){
+  me = me || { name:"デモ", color:COLORS[0] };
+  fam = fam || "demo";
+  $("#setup").classList.remove("show");
+  $("#app").style.display="flex";
+  initUI();
+  setSync(true); $("#syncTxt").textContent="デモ";
+  maybeSeedStock();   // 初回登録を流し込んで中身が見える状態にする
+  demoRender();
 }
+
+/* 起動処理はすべての定数・関数の定義後（スクリプト末尾）で呼ぶ */
 
 /* ================= セットアップ画面 ================= */
 function showSetup(){
@@ -648,6 +662,12 @@ async function addItem(name,catOverride){
   // 既にリストに未購入で存在するなら二重追加しない
   if(listItems.some(i=>!i.checked && i.name===name)){ toast("すでにリストにあります"); return; }
   const cat=catOverride||guessCat(name);
+  if(DEMO){
+    listItems.push({id:"d"+(demoId++),name,category:cat,checked:false,
+      addedBy:me.name,addedColor:me.color,addedAt:demoTs(),
+      updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()});
+    logHist(`「${name}」をリストに追加`); demoRender(); return;
+  }
   await addDoc(listCol(),{
     name,category:cat,checked:false,
     addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
@@ -659,6 +679,15 @@ async function addItem(name,catOverride){
 
 async function toggleItem(it){
   const done=!it.checked;
+  if(DEMO){
+    it.checked=done; it.updatedBy=me.name; it.updatedColor=me.color; it.updatedAt=demoTs();
+    if(done){
+      logHist(`「${it.name}」を買った`);
+      const st=stockItems.find(s=>s.name===it.name);
+      if(st && st.state!=="ok"){ st.state="ok"; st.updatedBy=me.name; st.updatedColor=me.color; st.updatedAt=demoTs(); }
+    }
+    demoRender(); return;
+  }
   await updateDoc(doc(listCol(),it.id),{
     checked:done,updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
   });
@@ -673,12 +702,18 @@ async function toggleItem(it){
 }
 
 async function delItem(it){
+  if(DEMO){ listItems=listItems.filter(x=>x.id!==it.id); demoRender(); return; }
   await deleteDoc(doc(listCol(),it.id));
 }
 
 async function addStock(name,catOverride){
   name=name.trim(); if(!name)return;
   if(stockItems.some(s=>s.name===name)){ toast("すでに登録済みです"); return; }
+  if(DEMO){
+    stockItems.push({id:"d"+(demoId++),name,category:catOverride||guessCat(name),state:"ok",
+      updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()});
+    logHist(`常備品「${name}」を登録`); demoRender(); return;
+  }
   await addDoc(stockCol(),{
     name,category:catOverride||guessCat(name),state:"ok",
     updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()
@@ -688,6 +723,12 @@ async function addStock(name,catOverride){
 
 // 初回だけ：常備品が空なら定番一式をまとめて登録する
 async function maybeSeedStock(){
+  if(DEMO){
+    if(stockItems.length) return;
+    stockItems=STOCK_SEED.map(s=>({id:"d"+(demoId++),name:s.name,category:s.cat,state:"ok",
+      updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}));
+    demoRender(); return;
+  }
   const key=LS.seeded+"."+fam;
   if(localStorage.getItem(key)) return;           // この端末では判定済み
   try{
@@ -709,6 +750,19 @@ async function maybeSeedStock(){
 
 async function setStock(st,state){
   if(st.state===state)return;
+  if(DEMO){
+    st.state=state; st.updatedBy=me.name; st.updatedColor=me.color; st.updatedAt=demoTs();
+    if(state==="out"){
+      logHist(`「${st.name}」が切れた`);
+      if(!listItems.some(i=>!i.checked && i.name===st.name)){
+        listItems.push({id:"d"+(demoId++),name:st.name,category:st.category||guessCat(st.name),checked:false,
+          addedBy:me.name,addedColor:me.color,addedAt:demoTs(),
+          updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs(),fromStock:true});
+        toast(`「${st.name}」を買い物リストへ追加`);
+      }
+    }
+    demoRender(); return;
+  }
   await updateDoc(doc(stockCol(),st.id),{state,updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
   if(state==="out"){
     logHist(`「${st.name}」が切れた`);
@@ -725,9 +779,13 @@ async function setStock(st,state){
   }
 }
 
-async function delStock(st){ await deleteDoc(doc(stockCol(),st.id)); }
+async function delStock(st){
+  if(DEMO){ stockItems=stockItems.filter(x=>x.id!==st.id); demoRender(); return; }
+  await deleteDoc(doc(stockCol(),st.id));
+}
 
 async function logHist(text){
+  if(DEMO){ histItems.unshift({id:"d"+(demoId++),text,by:me.name,color:me.color,at:demoTs()}); return; }
   try{ await addDoc(histCol(),{text,by:me.name,color:me.color,at:serverTimestamp()}); }catch{}
 }
 
@@ -1029,6 +1087,13 @@ async function importData(e){
   try{
     const data=JSON.parse(await f.text());
     if(!confirm("読み込むと現在の在庫リストに項目が追加されます。よろしいですか？"))return;
+    if(DEMO){
+      (data.stock||[]).forEach(s=>{ if(!stockItems.some(x=>x.name===s.name))
+        stockItems.push({id:"d"+(demoId++),name:s.name,category:s.category||guessCat(s.name),state:s.state||"ok",updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}); });
+      (data.list||[]).forEach(i=>{ if(!i.checked && !listItems.some(x=>!x.checked&&x.name===i.name))
+        listItems.push({id:"d"+(demoId++),name:i.name,category:i.category||guessCat(i.name),checked:false,addedBy:me.name,addedColor:me.color,addedAt:demoTs(),updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}); });
+      demoRender(); toast("読み込みました"); e.target.value=""; return;
+    }
     const batch=writeBatch(db);
     (data.stock||[]).forEach(s=>{
       if(stockItems.some(x=>x.name===s.name))return;
@@ -1083,6 +1148,15 @@ if("serviceWorker" in navigator){
   window.addEventListener("load",()=>{
     navigator.serviceWorker.register("sw.js?v="+VERSION.replace("v","")).catch(e=>console.log("SW:",e));
   });
+}
+
+/* ================= 起動（すべての定義後に実行） ================= */
+if (DEMO) {
+  startDemo();
+} else if (load(LS.cfg) && me && fam) {
+  boot(load(LS.cfg));
+} else {
+  showSetup();
 }
 </script>
 </body>
