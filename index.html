@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.6.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.7.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -227,6 +227,14 @@
   .section-title h2{font-size:18px;margin:0;}
   .count{font-size:13px;color:var(--muted);}
 
+  /* ---------- 店フィルタ（スーパー/ドラッグ切替） ---------- */
+  .storefilter{display:flex;background:var(--bg);border-radius:12px;padding:4px;gap:4px;margin:8px 4px 10px;}
+  .storefilter button{
+    flex:1;height:40px;border-radius:9px;font-size:13.5px;font-weight:700;color:var(--muted);
+    display:flex;align-items:center;justify-content:center;gap:5px;transition:.15s;
+  }
+  .storefilter button.sel{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+
   /* ---------- トースト ---------- */
   .toast{
     position:fixed;left:50%;bottom:calc(140px + var(--safe-b));transform:translateX(-50%) translateY(20px);
@@ -324,6 +332,11 @@
     <!-- 買い物リスト -->
     <section class="view active" id="view-list">
       <div class="section-title"><h2>買い物リスト</h2><span class="count" id="listCount"></span></div>
+      <div class="storefilter" id="storeFilter">
+        <button data-store="all" class="sel">すべて</button>
+        <button data-store="super">🛒 スーパー</button>
+        <button data-store="drug">💊 ドラッグ</button>
+      </div>
       <div id="listBody"></div>
       <div id="doneBody"></div>
       <div id="suggSection"></div>
@@ -459,7 +472,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.6.0";
+const VERSION = "v1.7.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -474,6 +487,22 @@ const CATS = [
 const CAT_ORDER = CATS.map(c=>c.id);
 const CAT_MAP = Object.fromEntries(CATS.map(c=>[c.id,c]));
 const COLORS = ["#2F8F6B","#E0A93B","#DB5A4B","#4E7CC0","#9B6DC7","#D9739B","#5FA85F","#6B7280"];
+
+// カテゴリ → 店（super=スーパー / drug=ドラッグストア / mid=どちらでも）。
+// midは「すべて」以外のどの店フィルタでも表示する（調味料・その他は両方で買えるため）
+const STORE_OF = {
+  veg:"super", meat:"super", dairy:"super", bread:"super", frozen:"super", snack:"super",
+  season:"mid", other:"mid",
+  daily:"drug",
+};
+// 店フィルタで表示するカテゴリ集合を返す
+function storeAllowedCats(store){
+  if(store==="all") return new Set(CAT_ORDER);
+  return new Set(CAT_ORDER.filter(cid=>{
+    const s=STORE_OF[cid]||"mid";
+    return s==="mid" || s===store;
+  }));
+}
 
 // キーワード→カテゴリの簡易推定
 const GUESS = [
@@ -543,6 +572,7 @@ let unsub=[];
 let setupColor = COLORS[0];
 let itemCatManual=null, stockCatManual=null; // nullなら自動推定に追従
 let seedChecked=false;                // 初回の常備品シード判定は1度だけ
+let listStore = settings.listStore || "all"; // 買い物リストの店フィルタ（all/super/drug）
 
 function load(k){ try{return JSON.parse(localStorage.getItem(k));}catch{return null;} }
 function save(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
@@ -831,17 +861,27 @@ function queueDigest(name){
 
 /* ================= 描画：買い物リスト ================= */
 function renderList(){
+  const allowed=storeAllowedCats(listStore);
+  const catOf=it=>CAT_MAP[it.category]?it.category:"other";
+  const inStore=it=>allowed.has(catOf(it));
   const active=listItems.filter(i=>!i.checked);
   const done=listItems.filter(i=>i.checked);
-  $("#listCount").textContent=active.length?`${active.length}件`:"";
+  const activeF=active.filter(inStore);      // 店フィルタ適用後の未購入
+  const doneF=done.filter(inStore);          // 店フィルタ適用後の購入済み
+  $("#listCount").textContent=activeF.length?`${activeF.length}件`:"";
   const body=$("#listBody"); body.innerHTML="";
 
   if(active.length===0 && done.length===0){
     body.innerHTML=`<div class="empty"><div class="big">🧺</div><p>リストは空です</p><p>下の入力から買うものを追加しましょう</p></div>`;
+  }else if(activeF.length===0 && doneF.length===0){
+    // この店フィルタでは該当なし（他の店には品がある）
+    const label=listStore==="super"?"スーパー":listStore==="drug"?"ドラッグストア":"この店";
+    body.innerHTML=`<div class="empty"><div class="big">🛍️</div><p>${label}で買うものはありません</p><p>「すべて」に切り替えると全部見られます</p></div>`;
   }else{
-    // カテゴリごと・売り場順
+    // カテゴリごと・売り場順（店フィルタで許可されたカテゴリのみ）
     for(const cid of CAT_ORDER){
-      const items=active.filter(i=>i.category===cid);
+      if(!allowed.has(cid))continue;
+      const items=activeF.filter(i=>catOf(i)===cid);
       if(!items.length)continue;
       const c=CAT_MAP[cid];
       const h=document.createElement("div"); h.className="cat";
@@ -850,13 +890,13 @@ function renderList(){
       items.forEach(it=>body.appendChild(itemRow(it)));
     }
   }
-  // 購入済み
+  // 購入済み（店フィルタ適用）
   const dbody=$("#doneBody"); dbody.innerHTML="";
-  if(done.length){
+  if(doneF.length){
     const h=document.createElement("div"); h.className="cat";
-    h.innerHTML=`<span class="emoji">✓</span>買ったもの（${done.length}）<span class="rule"></span>`;
+    h.innerHTML=`<span class="emoji">✓</span>買ったもの（${doneF.length}）<span class="rule"></span>`;
     dbody.appendChild(h);
-    done.forEach(it=>dbody.appendChild(itemRow(it)));
+    doneF.forEach(it=>dbody.appendChild(itemRow(it)));
   }
 }
 
@@ -1045,6 +1085,16 @@ function initUI(){
   // ジャンル選択（買い物・在庫の追加バー共通）
   setupCatPicker({ btn:$("#itemCatBtn"), getManual:()=>itemCatManual, setManual:v=>itemCatManual=v });
   setupCatPicker({ btn:$("#stockCatBtn"), getManual:()=>stockCatManual, setManual:v=>stockCatManual=v });
+
+  // 店フィルタ（すべて / スーパー / ドラッグ）
+  $$('#storeFilter button').forEach(b=>{
+    if(b.dataset.store===listStore) b.classList.add("sel"); else b.classList.remove("sel");
+    b.onclick=()=>{
+      listStore=b.dataset.store; settings.listStore=listStore; save(LS.set,settings);
+      $$('#storeFilter button').forEach(x=>x.classList.toggle("sel", x===b));
+      renderList(); window.scrollTo(0,0);
+    };
+  });
 
   // 追加：買い物
   const doAdd=()=>{
