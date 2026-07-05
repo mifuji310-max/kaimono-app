@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.7.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.8.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -235,6 +235,17 @@
   }
   .storefilter button.sel{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
 
+  /* ---------- 売り場の並び順エディタ ---------- */
+  .ordrow{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);
+    border-radius:12px;padding:8px 12px;margin-bottom:8px;}
+  .ordrow .ordemoji{font-size:18px;}
+  .ordrow .ordname{flex:1;font-weight:600;font-size:14px;}
+  .ordbtns{display:flex;gap:6px;flex:0 0 auto;}
+  .ordbtn{width:38px;height:38px;border-radius:9px;background:var(--surface);border:1px solid var(--line);
+    font-size:14px;color:var(--ink);display:grid;place-items:center;}
+  .ordbtn:active{background:var(--green-soft);}
+  .ordbtn:disabled{opacity:.35;}
+
   /* ---------- トースト ---------- */
   .toast{
     position:fixed;left:50%;bottom:calc(140px + var(--safe-b));transform:translateX(-50%) translateY(20px);
@@ -389,6 +400,15 @@
       </div>
 
       <div class="card">
+        <h3>売り場の並び順</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">
+          いつものお店のレイアウトに合わせて、カテゴリの表示順を変えられます（▲▼で移動）。買い物リストと在庫の並びに反映されます。
+        </p>
+        <div id="catOrderList"></div>
+        <button class="btn ghost mini" id="catOrderReset" style="margin-top:4px;">最初の順番に戻す</button>
+      </div>
+
+      <div class="card">
         <h3>プロフィール</h3>
         <div class="field"><label>名前</label><input id="setName" maxlength="12" /></div>
         <div class="field"><label>色</label><div class="swatches" id="setSwatches"></div></div>
@@ -472,7 +492,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.7.0";
+const VERSION = "v1.8.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -502,6 +522,11 @@ function storeAllowedCats(store){
     const s=STORE_OF[cid]||"mid";
     return s==="mid" || s===store;
   }));
+}
+// 保存された売り場の並び順が正しい（9カテゴリを過不足なく含む）か検証
+function validCatOrder(arr){
+  return Array.isArray(arr) && arr.length===CAT_ORDER.length
+    && CAT_ORDER.every(c=>arr.includes(c)) && arr.every(c=>CAT_MAP[c]);
 }
 
 // キーワード→カテゴリの簡易推定
@@ -573,6 +598,7 @@ let setupColor = COLORS[0];
 let itemCatManual=null, stockCatManual=null; // nullなら自動推定に追従
 let seedChecked=false;                // 初回の常備品シード判定は1度だけ
 let listStore = settings.listStore || "all"; // 買い物リストの店フィルタ（all/super/drug）
+let catOrder = validCatOrder(settings.catOrder) ? settings.catOrder.slice() : [...CAT_ORDER]; // 売り場の並び順
 
 function load(k){ try{return JSON.parse(localStorage.getItem(k));}catch{return null;} }
 function save(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
@@ -879,7 +905,7 @@ function renderList(){
     body.innerHTML=`<div class="empty"><div class="big">🛍️</div><p>${label}で買うものはありません</p><p>「すべて」に切り替えると全部見られます</p></div>`;
   }else{
     // カテゴリごと・売り場順（店フィルタで許可されたカテゴリのみ）
-    for(const cid of CAT_ORDER){
+    for(const cid of catOrder){
       if(!allowed.has(cid))continue;
       const items=activeF.filter(i=>catOf(i)===cid);
       if(!items.length)continue;
@@ -978,7 +1004,7 @@ function renderStock(){
     return;
   }
   // カテゴリ順
-  for(const cid of CAT_ORDER){
+  for(const cid of catOrder){
     const items=stockItems.filter(s=>s.category===cid);
     if(!items.length)continue;
     const c=CAT_MAP[cid];
@@ -1006,6 +1032,30 @@ function stockRow(st){
   del.onclick=()=>{ if(confirm(`「${st.name}」を在庫から削除しますか？`)) delStock(st); };
   row.append(catBadge(st,true),b,seg,del);
   return row;
+}
+
+/* ================= 売り場の並び順エディタ ================= */
+function renderCatOrderEditor(){
+  const box=$("#catOrderList"); if(!box)return;
+  box.innerHTML="";
+  catOrder.forEach((cid,idx)=>{
+    const c=CAT_MAP[cid]; if(!c)return;
+    const row=document.createElement("div"); row.className="ordrow";
+    row.innerHTML=`<span class="ordemoji">${c.emoji}</span><span class="ordname">${c.name}</span>`;
+    const btns=document.createElement("div"); btns.className="ordbtns";
+    const up=document.createElement("button"); up.className="ordbtn"; up.setAttribute("aria-label","上へ"); up.textContent="▲";
+    up.disabled=idx===0; up.onclick=()=>moveCat(idx,-1);
+    const dn=document.createElement("button"); dn.className="ordbtn"; dn.setAttribute("aria-label","下へ"); dn.textContent="▼";
+    dn.disabled=idx===catOrder.length-1; dn.onclick=()=>moveCat(idx,1);
+    btns.append(up,dn); row.append(btns);
+    box.appendChild(row);
+  });
+}
+function moveCat(idx,dir){
+  const j=idx+dir; if(j<0||j>=catOrder.length)return;
+  [catOrder[idx],catOrder[j]]=[catOrder[j],catOrder[idx]];
+  settings.catOrder=catOrder; save(LS.set,settings);
+  renderCatOrderEditor(); renderList(); renderStock();
 }
 
 /* ================= 描画：履歴 ================= */
@@ -1150,6 +1200,13 @@ function initUI(){
   $("#saveProfile").onclick=()=>{
     const n=$("#setName").value.trim()||me.name;
     me={name:n,color:profColor}; save(LS.me,me); toast("保存しました");
+  };
+
+  // 売り場の並び順
+  renderCatOrderEditor();
+  $("#catOrderReset").onclick=()=>{
+    catOrder=[...CAT_ORDER]; settings.catOrder=catOrder; save(LS.set,settings);
+    renderCatOrderEditor(); renderList(); renderStock(); toast("並び順を戻しました");
   };
 
   // 家族コード
