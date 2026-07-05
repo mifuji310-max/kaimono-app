@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.5.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.5.1" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -342,7 +342,6 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
         </div>
-        <div class="catmenu" id="stockCatMenu"></div>
       </div>
     </section>
 
@@ -415,7 +414,6 @@
 
   <!-- 追加バー（買い物リスト時のみ表示） -->
   <div class="addbar" id="addbar">
-    <div class="catmenu" id="itemCatMenu"></div>
     <div class="inner">
       <button class="catchip" id="itemCatBtn" type="button" aria-label="ジャンルを選ぶ">🛒</button>
       <input id="itemAdd" placeholder="買うものを追加" />
@@ -460,7 +458,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.5.0";
+const VERSION = "v1.5.1";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -899,16 +897,19 @@ function openCatPicker(anchor,currentCat,onPick){
     pop.appendChild(b);
   });
   pop.classList.add("show");
-  // タップ位置の近くへ配置（画面外にはみ出さないよう調整）
+  // タップ位置の近くへ配置（下部ナビの上端を下限にして、画面内かつナビに重ならないよう調整）
   const r=anchor.getBoundingClientRect(), pw=pop.offsetWidth, ph=pop.offsetHeight;
+  const nav=document.querySelector("nav.tabs");
+  const navTop=nav ? nav.getBoundingClientRect().top : window.innerHeight;
+  const bottomBound=Math.min(window.innerHeight, navTop)-8;
   const left=Math.min(Math.max(8,r.left), window.innerWidth-pw-8);
   let top=r.bottom+6;
-  if(top+ph>window.innerHeight-8) top=r.top-ph-6;               // 収まらなければ上に出す
-  top=Math.max(8, Math.min(top, window.innerHeight-ph-8));      // 最終的に必ず画面内へ
+  if(top+ph>bottomBound) top=r.top-ph-6;                 // 収まらなければ上に出す
+  top=Math.max(8, Math.min(top, bottomBound-ph));        // 最終的に必ず画面内＆ナビの上へ
   pop.style.left=left+"px"; pop.style.top=top+"px";
 }
 document.addEventListener("click",e=>{
-  if(catPopEl && catPopEl.classList.contains("show") && !e.target.closest("#catPop") && !e.target.closest(".catbadge"))
+  if(catPopEl && catPopEl.classList.contains("show") && !e.target.closest("#catPop") && !e.target.closest(".catbadge") && !e.target.closest(".catchip"))
     catPopEl.classList.remove("show");
 });
 function catBadge(item,isStock){
@@ -990,22 +991,15 @@ function resetCatChip(btn){
   btn.textContent = CAT_MAP.other.emoji;
   btn.classList.remove("manual");
 }
-function setupCatPicker({btn,menu,input,getManual,setManual}){
-  menu.innerHTML="";
-  CATS.forEach(c=>{
-    const b=document.createElement("button"); b.type="button"; b.className="catopt";
-    b.innerHTML=`<span class="em">${c.emoji}</span><span>${c.name}</span>`;
-    b.onclick=()=>{
-      setManual(c.id);
-      btn.textContent=c.emoji; btn.classList.add("manual");
-      menu.classList.remove("show");
-    };
-    menu.appendChild(b);
-  });
-  btn.onclick=()=>{ menu.classList.toggle("show"); };
-  document.addEventListener("click",e=>{
-    if(!e.target.closest(`#${btn.id}`) && !e.target.closest(`#${menu.id}`)) menu.classList.remove("show");
-  });
+function setupCatPicker({btn,getManual,setManual}){
+  // 追加バーのカテゴリチップも、画面内に必ず収まる共通ポップアップ（openCatPicker）で開く
+  btn.onclick=e=>{
+    e.stopPropagation();
+    openCatPicker(btn, getManual(), cat=>{
+      setManual(cat);
+      btn.textContent=CAT_MAP[cat].emoji; btn.classList.add("manual");
+    });
+  };
 }
 
 /* ================= サジェスト（定番・常備品から追加） ================= */
@@ -1048,14 +1042,8 @@ function initUI(){
     };
   });
   // ジャンル選択（買い物・在庫の追加バー共通）
-  setupCatPicker({
-    btn:$("#itemCatBtn"), menu:$("#itemCatMenu"), input:$("#itemAdd"),
-    getManual:()=>itemCatManual, setManual:v=>itemCatManual=v
-  });
-  setupCatPicker({
-    btn:$("#stockCatBtn"), menu:$("#stockCatMenu"), input:$("#stockAdd"),
-    getManual:()=>stockCatManual, setManual:v=>stockCatManual=v
-  });
+  setupCatPicker({ btn:$("#itemCatBtn"), getManual:()=>itemCatManual, setManual:v=>itemCatManual=v });
+  setupCatPicker({ btn:$("#stockCatBtn"), getManual:()=>stockCatManual, setManual:v=>stockCatManual=v });
 
   // 追加：買い物
   const doAdd=()=>{
