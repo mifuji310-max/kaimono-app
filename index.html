@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.4.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.5.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -94,6 +94,12 @@
   .who .pip{width:8px;height:8px;border-radius:50%;flex:0 0 auto;}
   .row .del{width:36px;height:36px;border-radius:10px;flex:0 0 auto;display:grid;place-items:center;color:var(--muted);}
   .row .del:active{background:var(--bg);}
+  /* カテゴリ変更バッジ（行の現在ジャンルを表示＆タップで変更） */
+  .catbadge{
+    flex:0 0 auto;width:30px;height:30px;border-radius:9px;background:var(--bg);
+    border:1.5px solid var(--line);display:grid;place-items:center;font-size:16px;line-height:1;
+  }
+  .catbadge:active{background:var(--green-soft);}
 
   /* ---------- 在庫の3状態セグメント（シグネチャ要素） ---------- */
   .stock-row{align-items:center;gap:8px;}
@@ -184,6 +190,13 @@
   .catopt:active{background:var(--green-soft);}
   .catopt .em{font-size:18px;}
   .catopt.sel{background:var(--green-soft);color:var(--green);}
+  /* 行のジャンル変更ポップアップ（body直下に配置し、タップ位置に浮かせる） */
+  .catpop{
+    position:fixed;z-index:80;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:8px;display:none;
+    grid-template-columns:repeat(3,1fr);gap:6px;width:264px;max-width:calc(100vw - 16px);
+  }
+  .catpop.show{display:grid;}
   .addbar input{flex:1;border:none;padding:12px;background:transparent;}
   .addbar input:focus{outline:none;}
   .addbar .go{width:44px;height:44px;border-radius:12px;background:var(--green);color:#fff;display:grid;place-items:center;flex:0 0 auto;}
@@ -447,7 +460,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.4.0";
+const VERSION = "v1.5.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -706,6 +719,14 @@ async function delItem(it){
   await deleteDoc(doc(listCol(),it.id));
 }
 
+// 買い物リストの品のカテゴリ（ジャンル）を変更
+async function setItemCategory(it,cat){
+  if(it.category===cat) return;
+  if(DEMO){ it.category=cat; demoRender(); toast(`ジャンルを「${CAT_MAP[cat].name}」に変更`); return; }
+  await updateDoc(doc(listCol(),it.id),{category:cat});
+  toast(`ジャンルを「${CAT_MAP[cat].name}」に変更`);
+}
+
 async function addStock(name,catOverride){
   name=name.trim(); if(!name)return;
   if(stockItems.some(s=>s.name===name)){ toast("すでに登録済みです"); return; }
@@ -784,6 +805,14 @@ async function delStock(st){
   await deleteDoc(doc(stockCol(),st.id));
 }
 
+// 常備品のカテゴリ（ジャンル）を変更
+async function setStockCategory(st,cat){
+  if(st.category===cat) return;
+  if(DEMO){ st.category=cat; demoRender(); toast(`ジャンルを「${CAT_MAP[cat].name}」に変更`); return; }
+  await updateDoc(doc(stockCol(),st.id),{category:cat});
+  toast(`ジャンルを「${CAT_MAP[cat].name}」に変更`);
+}
+
 async function logHist(text){
   if(DEMO){ histItems.unshift({id:"d"+(demoId++),text,by:me.name,color:me.color,at:demoTs()}); return; }
   try{ await addDoc(histCol(),{text,by:me.name,color:me.color,at:serverTimestamp()}); }catch{}
@@ -848,8 +877,48 @@ function itemRow(it){
   const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","削除");
   del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
   del.onclick=()=>delItem(it);
-  row.append(chk,b,del);
+  row.append(chk,catBadge(it,false),b,del);
   return row;
+}
+
+/* ================= ジャンル変更バッジ＆ポップアップ ================= */
+let catPopEl=null;
+function ensureCatPop(){
+  if(catPopEl) return catPopEl;
+  catPopEl=document.createElement("div"); catPopEl.className="catpop"; catPopEl.id="catPop";
+  document.body.appendChild(catPopEl);
+  return catPopEl;
+}
+function openCatPicker(anchor,currentCat,onPick){
+  const pop=ensureCatPop();
+  pop.innerHTML="";
+  CATS.forEach(c=>{
+    const b=document.createElement("button"); b.type="button"; b.className="catopt"+(c.id===currentCat?" sel":"");
+    b.innerHTML=`<span class="em">${c.emoji}</span><span>${c.name}</span>`;
+    b.onclick=e=>{ e.stopPropagation(); pop.classList.remove("show"); onPick(c.id); };
+    pop.appendChild(b);
+  });
+  pop.classList.add("show");
+  // タップ位置の近くへ配置（画面外にはみ出さないよう調整）
+  const r=anchor.getBoundingClientRect(), pw=pop.offsetWidth, ph=pop.offsetHeight;
+  const left=Math.min(Math.max(8,r.left), window.innerWidth-pw-8);
+  let top=r.bottom+6;
+  if(top+ph>window.innerHeight-8) top=r.top-ph-6;               // 収まらなければ上に出す
+  top=Math.max(8, Math.min(top, window.innerHeight-ph-8));      // 最終的に必ず画面内へ
+  pop.style.left=left+"px"; pop.style.top=top+"px";
+}
+document.addEventListener("click",e=>{
+  if(catPopEl && catPopEl.classList.contains("show") && !e.target.closest("#catPop") && !e.target.closest(".catbadge"))
+    catPopEl.classList.remove("show");
+});
+function catBadge(item,isStock){
+  const b=document.createElement("button"); b.type="button"; b.className="catbadge"; b.setAttribute("aria-label","ジャンルを変更");
+  b.textContent=(CAT_MAP[item.category]||CAT_MAP.other).emoji;
+  b.onclick=e=>{
+    e.stopPropagation();
+    openCatPicker(b,item.category,cat=>{ isStock?setStockCategory(item,cat):setItemCategory(item,cat); });
+  };
+  return b;
 }
 
 /* ================= 描画：在庫 ================= */
@@ -893,7 +962,7 @@ function stockRow(st){
   const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","常備品を削除");
   del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
   del.onclick=()=>{ if(confirm(`「${st.name}」を常備品から削除しますか？`)) delStock(st); };
-  row.append(b,seg,del);
+  row.append(catBadge(st,true),b,seg,del);
   return row;
 }
 
