@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.9.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.10.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -77,6 +77,14 @@
     background:var(--red-soft);border-radius:999px;padding:6px 12px;
   }
   .clearbtn:active{filter:brightness(.95);}
+  /* 「あとで買う」 */
+  .row.later{opacity:.6;}
+  .laterbtn{
+    flex:0 0 auto;font-size:12px;font-weight:700;color:var(--muted);
+    background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:6px 10px;
+  }
+  .laterbtn.back{color:#fff;background:var(--green);border-color:var(--green);}
+  .laterbtn:active{filter:brightness(.95);}
 
   /* ---------- 行（リスト項目） ---------- */
   .row{
@@ -497,7 +505,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.9.0";
+const VERSION = "v1.10.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -732,8 +740,12 @@ function listen(){
 /* ================= 操作 ================= */
 async function addItem(name,catOverride){
   name=name.trim(); if(!name)return;
-  // 既にリストに未購入で存在するなら二重追加しない
-  if(listItems.some(i=>!i.checked && i.name===name)){ toast("すでにリストにあります"); return; }
+  // 既にリストに未購入で存在するなら二重追加しない（「あとで」にある品は通常リストへ戻す）
+  const ex=listItems.find(i=>!i.checked && i.name===name);
+  if(ex){
+    if(ex.later){ setLater(ex,false); } else { toast("すでにリストにあります"); }
+    return;
+  }
   const cat=catOverride||guessCat(name);
   if(DEMO){
     listItems.push({id:"d"+(demoId++),name,category:cat,checked:false,
@@ -777,6 +789,13 @@ async function toggleItem(it){
 async function delItem(it){
   if(DEMO){ listItems=listItems.filter(x=>x.id!==it.id); demoRender(); return; }
   await deleteDoc(doc(listCol(),it.id));
+}
+
+// 「あとで買う」フラグの切り替え（true=今は買わない置き場へ / false=通常リストへ戻す）
+async function setLater(it,later){
+  if(DEMO){ it.later=later; demoRender(); toast(later?"「あとで買う」へ移動":"買い物リストに戻しました"); return; }
+  await updateDoc(doc(listCol(),it.id),{later});
+  toast(later?"「あとで買う」へ移動":"買い物リストに戻しました");
 }
 
 // 買い物リストの品のカテゴリ（ジャンル）を変更
@@ -835,7 +854,10 @@ async function setStock(st,state){
     st.state=state; st.updatedBy=me.name; st.updatedColor=me.color; st.updatedAt=demoTs();
     if(state==="out"){
       logHist(`「${st.name}」が切れた`);
-      if(!listItems.some(i=>!i.checked && i.name===st.name)){
+      const ex=listItems.find(i=>!i.checked && i.name===st.name);
+      if(ex){
+        if(ex.later) setLater(ex,false);  // 「あとで」にあったら通常リストへ戻す（切れた＝買う意思）
+      }else{
         listItems.push({id:"d"+(demoId++),name:st.name,category:st.category||guessCat(st.name),checked:false,
           addedBy:me.name,addedColor:me.color,addedAt:demoTs(),
           updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs(),fromStock:true});
@@ -847,8 +869,10 @@ async function setStock(st,state){
   await updateDoc(doc(stockCol(),st.id),{state,updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
   if(state==="out"){
     logHist(`「${st.name}」が切れた`);
-    // 閉ループ：買い物リストへ自動追加
-    if(!listItems.some(i=>!i.checked && i.name===st.name)){
+    // 閉ループ：買い物リストへ自動追加（「あとで」にあったら通常リストへ戻す）
+    const ex=listItems.find(i=>!i.checked && i.name===st.name);
+    if(ex && ex.later){ setLater(ex,false); }
+    else if(!ex){
       await addDoc(listCol(),{
         name:st.name,category:st.category||guessCat(st.name),checked:false,
         addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
@@ -895,16 +919,18 @@ function renderList(){
   const allowed=storeAllowedCats(listStore);
   const catOf=it=>CAT_MAP[it.category]?it.category:"other";
   const inStore=it=>allowed.has(catOf(it));
-  const active=listItems.filter(i=>!i.checked);
+  const active=listItems.filter(i=>!i.checked && !i.later);   // 通常の買うもの
+  const laterAll=listItems.filter(i=>!i.checked && i.later);  // あとで買う
   const done=listItems.filter(i=>i.checked);
   const activeF=active.filter(inStore);      // 店フィルタ適用後の未購入
+  const laterF=laterAll.filter(inStore);     // 店フィルタ適用後のあとで買う
   const doneF=done.filter(inStore);          // 店フィルタ適用後の購入済み
-  $("#listCount").textContent=activeF.length?`${activeF.length}件`:"";
+  $("#listCount").textContent=activeF.length?`${activeF.length}件`:"";  // あとでは件数に含めない
   const body=$("#listBody"); body.innerHTML="";
 
-  if(active.length===0 && done.length===0){
+  if(active.length===0 && laterAll.length===0 && done.length===0){
     body.innerHTML=`<div class="empty"><div class="big">🧺</div><p>リストは空です</p><p>下の入力から買うものを追加しましょう</p></div>`;
-  }else if(activeF.length===0 && doneF.length===0){
+  }else if(activeF.length===0 && laterF.length===0 && doneF.length===0){
     // この店フィルタでは該当なし（他の店には品がある）
     const label=listStore==="super"?"スーパー":listStore==="drug"?"ドラッグストア":"この店";
     body.innerHTML=`<div class="empty"><div class="big">🛍️</div><p>${label}で買うものはありません</p><p>「すべて」に切り替えると全部見られます</p></div>`;
@@ -919,6 +945,13 @@ function renderList(){
       h.innerHTML=`<span class="emoji">${c.emoji}</span>${c.name}<span class="rule"></span>`;
       body.appendChild(h);
       items.forEach(it=>body.appendChild(itemRow(it)));
+    }
+    // あとで買う（薄く表示・件数に入れない）
+    if(laterF.length){
+      const h=document.createElement("div"); h.className="cat";
+      h.innerHTML=`<span class="emoji">💤</span>あとで買う（${laterF.length}）<span class="rule"></span>`;
+      body.appendChild(h);
+      laterF.forEach(it=>body.appendChild(itemRow(it)));
     }
   }
   // 購入済み（店フィルタ適用）
@@ -949,7 +982,7 @@ async function clearDone(){
 
 function itemRow(it){
   const row=document.createElement("div");
-  row.className="row"+(it.checked?" done":"");
+  row.className="row"+(it.checked?" done":"")+(!it.checked&&it.later?" later":"");
   const chk=document.createElement("div");
   chk.className="check"+(it.checked?" done":"");
   chk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>`;
@@ -963,7 +996,15 @@ function itemRow(it){
   const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","削除");
   del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
   del.onclick=()=>delItem(it);
-  row.append(chk,catBadge(it,false),b,del);
+  row.append(chk,catBadge(it,false),b);
+  if(!it.checked){
+    // 未購入の行だけ「あとで」⇄「買う」の切り替えボタンを付ける
+    const lt=document.createElement("button"); lt.className="laterbtn"+(it.later?" back":"");
+    lt.textContent=it.later?"買う":"あとで";
+    lt.onclick=()=>setLater(it,!it.later);
+    row.append(lt);
+  }
+  row.append(del);
   return row;
 }
 
