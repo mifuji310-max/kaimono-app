@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.8.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.9.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -72,6 +72,11 @@
   .cat{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;color:var(--muted);font-size:13px;font-weight:700;}
   .cat .emoji{font-size:16px;}
   .cat .rule{flex:1;height:1px;background:var(--line);}
+  .clearbtn{
+    flex:0 0 auto;font-size:12px;font-weight:700;color:var(--red);
+    background:var(--red-soft);border-radius:999px;padding:6px 12px;
+  }
+  .clearbtn:active{filter:brightness(.95);}
 
   /* ---------- 行（リスト項目） ---------- */
   .row{
@@ -487,12 +492,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+  collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit,
   serverTimestamp, getDocs, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.8.0";
+const VERSION = "v1.9.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -719,8 +724,8 @@ function listen(){
   unsub.push(onSnapshot(query(stockCol(),orderBy("name","asc")), snap=>{
     stockItems=snap.docs.map(d=>({id:d.id,...d.data()})); renderStock(); refreshSugg();
   }));
-  unsub.push(onSnapshot(query(histCol(),orderBy("at","desc")), snap=>{
-    histItems=snap.docs.map(d=>({id:d.id,...d.data()})).slice(0,80); renderHist();
+  unsub.push(onSnapshot(query(histCol(),orderBy("at","desc"),limit(80)), snap=>{
+    histItems=snap.docs.map(d=>({id:d.id,...d.data()})); renderHist();
   }));
 }
 
@@ -921,9 +926,25 @@ function renderList(){
   if(doneF.length){
     const h=document.createElement("div"); h.className="cat";
     h.innerHTML=`<span class="emoji">✓</span>買ったもの（${doneF.length}）<span class="rule"></span>`;
+    const clr=document.createElement("button"); clr.className="clearbtn"; clr.textContent="まとめて消す";
+    clr.onclick=clearDone;
+    h.appendChild(clr);
     dbody.appendChild(h);
     doneF.forEach(it=>dbody.appendChild(itemRow(it)));
   }
+}
+
+// 買い終わった（チェック済み）品をリストからまとめて消去
+async function clearDone(){
+  const done=listItems.filter(i=>i.checked);
+  if(!done.length) return;
+  if(!confirm(`買ったもの ${done.length}件 をリストから消しますか？`)) return;
+  if(DEMO){ listItems=listItems.filter(i=>!i.checked); demoRender(); toast("消去しました"); return; }
+  const batch=writeBatch(db);
+  done.forEach(it=>batch.delete(doc(listCol(),it.id)));
+  await batch.commit();
+  logHist(`買ったもの${done.length}件をまとめて消去`);
+  toast("消去しました");
 }
 
 function itemRow(it){
