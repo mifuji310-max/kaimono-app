@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.11.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.12.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -84,6 +84,22 @@
   .suggcat .sc-count{margin-left:auto;font-size:12px;font-weight:700;color:var(--muted);background:var(--bg);border-radius:999px;padding:2px 9px;}
   .suggcat .sc-arrow{color:var(--muted);transition:transform .15s;font-size:12px;}
   .suggcat.open .sc-arrow{transform:rotate(180deg);}
+
+  /* ---------- 汎用名（Z品）の強調 ---------- */
+  .row .name.generic{font-weight:800;color:var(--green);}
+  .chip.generic{font-weight:700;color:var(--green);border-color:var(--green);}
+
+  /* ---------- コンパクト表示（表示密度：大画面向け） ---------- */
+  body.compact .row{padding:7px 12px;margin-bottom:5px;min-height:44px;}
+  body.compact .row .name{font-size:15px;}
+  body.compact .row .meta{font-size:11px;}
+  body.compact .check{width:24px;height:24px;border-radius:8px;}
+  body.compact .catbadge{width:26px;height:26px;font-size:14px;}
+  body.compact .seg button{height:32px;min-width:42px;font-size:12px;}
+  body.compact .cat{margin:12px 4px 6px;}
+  body.compact .subcat{margin:4px 4px 3px 6px;}
+  body.compact .hist{padding:7px 4px;}
+  body.compact .laterbtn{padding:4px 8px;}
   .clearbtn{
     flex:0 0 auto;font-size:12px;font-weight:700;color:var(--red);
     background:var(--red-soft);border-radius:999px;padding:6px 12px;
@@ -425,6 +441,14 @@
       </div>
 
       <div class="card">
+        <h3>表示密度</h3>
+        <div class="radios" id="densityRadios">
+          <label data-v="normal"><input type="radio" name="dn" value="normal"><span><b>ふつう</b><span class="sub">標準の行の高さ。押しやすさ重視。</span></span></label>
+          <label data-v="compact"><input type="radio" name="dn" value="compact"><span><b>コンパクト</b><span class="sub">行を詰めて1画面にたくさん表示。大きめのスマホ向け。</span></span></label>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>売り場の並び順</h3>
         <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">
           いつものお店のレイアウトに合わせて、カテゴリの表示順を変えられます（▲▼で移動）。買い物リストと在庫の並びに反映されます。
@@ -517,12 +541,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.11.0";
+const VERSION = "v1.12.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
   { id:"dairy", name:"乳製品・卵",   emoji:"🥚" },
-  { id:"soy",   name:"大豆製品",     emoji:"🫘" },
+  { id:"soy",   name:"大豆製品 他",  emoji:"🫘" },
   { id:"bread", name:"パン・主食",   emoji:"🍞" },
   { id:"season",name:"調味料・乾物", emoji:"🥫" },
   { id:"frozen",name:"冷凍食品",     emoji:"❄️" },
@@ -560,8 +584,8 @@ function validCatOrder(arr){
 const GUESS = [
   // 詰め替え（洗剤・シャンプー類は詰め替えを買う家庭方針。日用品より先に判定）
   [/詰め替え|詰替|つめかえ|洗剤|シャンプー|リンス|コンディショナー|柔軟|漂白|ボディソープ|ボディーソープ|ハンドソープ/,"refill"],
-  // 大豆製品（日配。dairy/meatより先に判定）
-  [/豆腐|納豆|油揚げ|厚揚げ|薄揚げ|がんも|豆乳|おから|^あげ$/,"soy"],
+  // 大豆製品 他（日配コーナー。dairy/meatより先に判定）
+  [/豆腐|納豆|油揚げ|厚揚げ|薄揚げ|がんも|豆乳|おから|^あげ$|こんにゃく|しらたき|漬物|梅干し|キムチ|餃子の皮|ところてん/,"soy"],
   // 具体的な調味料・乾物（一般ルールより先に判定して誤分類を防ぐ）
   [/みりん|料理酒|調理酒|白だし|めんつゆ|焼肉のタレ|だしの素|鶏ガラ|コンソメ|片栗粉|パン粉|小麦粉|かつお節|かつおぶし|ふえるワカメ|ワカメ|インスタントスープ|スープ|カレールウ|カレー|シチュー|ルウ|ルー|ごまドレ|ドレッシング|ドレ|ごま/,"season"],
   [/牛乳|ヨーグルト|ヤクルト|チーズ|バター|マーガリン|卵|たまご|ミルク/,"dairy"],
@@ -574,6 +598,9 @@ const GUESS = [
   [/トイレ|ティッシュ|ペーパー|石鹸|せっけん|歯|掃除|ラップ|ゴミ袋|電池|アルコール|アルミ|ホイル|ジップ|くつ/,"daily"],
 ];
 function guessCat(name){ for(const[re,c]of GUESS){ if(re.test(name))return c; } return "other"; }
+
+// ざっくり指定できる汎用名（Z品）。太字＋緑で表示して具体名と見分ける
+const GENERIC = new Set(["葉物野菜","きのこ","魚","鶏肉","豚肉"]);
 
 // カテゴリ内の小分類（売り場の中での並び順＋区切りラベル）。上から順に判定
 const SUBS = {
@@ -637,10 +664,12 @@ const STOCK_SEED = [
   {name:"魚",cat:"meat"},{name:"ツナ",cat:"meat"},
   // 乳製品・卵
   {name:"卵",cat:"dairy"},{name:"ヨーグルト",cat:"dairy"},{name:"ヤクルト",cat:"dairy"},{name:"さけるチーズ",cat:"dairy"},{name:"マーガリン",cat:"dairy"},
-  // 大豆製品
-  {name:"納豆",cat:"soy"},{name:"豆腐",cat:"soy"},{name:"あげ",cat:"soy"},
+  // 大豆製品 他（日配コーナー）
+  {name:"納豆",cat:"soy"},{name:"豆腐",cat:"soy"},{name:"あげ",cat:"soy"},{name:"厚揚げ",cat:"soy"},
+  {name:"こんにゃく",cat:"soy"},{name:"しらたき",cat:"soy"},{name:"漬物",cat:"soy"},{name:"梅干し",cat:"soy"},
+  {name:"キムチ",cat:"soy"},{name:"餃子の皮",cat:"soy"},
   // パン・主食
-  {name:"食パン",cat:"bread"},{name:"その他のパン",cat:"bread"},{name:"餃子の皮",cat:"bread"},
+  {name:"食パン",cat:"bread"},{name:"その他のパン",cat:"bread"},
   // 調味料・乾物（液体→粉体→乾物）
   {name:"醤油",cat:"season"},{name:"ソース",cat:"season"},{name:"マヨネーズ",cat:"season"},{name:"ケチャップ",cat:"season"},
   {name:"ドレッシング",cat:"season"},{name:"ごまドレ",cat:"season"},{name:"焼肉のタレ",cat:"season"},{name:"めんつゆ",cat:"season"},
@@ -661,8 +690,6 @@ const STOCK_SEED = [
   // 詰め替え（洗剤・シャンプー類）
   {name:"台所用洗剤",cat:"refill"},{name:"食洗機用洗剤",cat:"refill"},{name:"洗濯洗剤",cat:"refill"},{name:"柔軟剤",cat:"refill"},
   {name:"漂白剤",cat:"refill"},{name:"シャンプー",cat:"refill"},{name:"リンス",cat:"refill"},{name:"ボディーソープ",cat:"refill"},
-  // その他
-  {name:"こんにゃく",cat:"other"},
 ];
 
 // よく使う候補（サジェスト）は初期常備品リストと同じ品揃えにする
@@ -1067,7 +1094,7 @@ function itemRow(it){
   const who = it.checked
     ? `${it.updatedBy||""}が買った ・ ${rel(it.updatedAt)}`
     : `${it.addedBy||""} ・ ${rel(it.addedAt)}`;
-  b.innerHTML=`<div class="name">${esc(it.name)}</div>
+  b.innerHTML=`<div class="name${GENERIC.has(it.name)?" generic":""}">${esc(it.name)}</div>
     <div class="meta"><span class="who"><span class="pip" style="background:${it.checked?(it.updatedColor||'#ccc'):(it.addedColor||'#ccc')}"></span>${esc(who)}</span></div>`;
   const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","削除");
   del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
@@ -1159,7 +1186,7 @@ function renderStock(){
 function stockRow(st){
   const row=document.createElement("div"); row.className="row stock-row";
   const b=document.createElement("div"); b.className="body";
-  b.innerHTML=`<div class="name">${esc(st.name)}</div>
+  b.innerHTML=`<div class="name${GENERIC.has(st.name)?" generic":""}">${esc(st.name)}</div>
     <div class="meta"><span class="who"><span class="pip" style="background:${st.updatedColor||'#ccc'}"></span>${esc(st.updatedBy||"")} ・ ${rel(st.updatedAt)}</span></div>`;
   const seg=document.createElement("div"); seg.className="seg";
   [["ok","ある"],["low","少ない"],["out","切れた"]].forEach(([v,label])=>{
@@ -1260,7 +1287,7 @@ function refreshSugg(){
     head.innerHTML=`<span class="sc-emoji">${c.emoji}</span><span class="sc-name">${c.name}</span><span class="sc-count">${names.length}</span><span class="sc-arrow">▾</span>`;
     const wrap=document.createElement("div"); wrap.className="sugg-wrap"; wrap.style.display=open?"flex":"none";
     names.forEach(n=>{
-      const b=document.createElement("button"); b.className="chip"; b.textContent=n; b.onclick=()=>addItem(n);
+      const b=document.createElement("button"); b.className="chip"+(GENERIC.has(n)?" generic":""); b.textContent=n; b.onclick=()=>addItem(n);
       wrap.appendChild(b);
     });
     head.onclick=()=>{
@@ -1283,6 +1310,38 @@ function initUI(){
       $("#view-"+b.dataset.tab).classList.add("active");
       $("#addbar").style.display = b.dataset.tab==="list" ? "block":"none";
       window.scrollTo(0,0);
+    };
+  });
+
+  // スワイプでタブ切り替え（横に大きく動いた時だけ。縦スクロールとは区別）
+  const TAB_ORDER=["list","stock","hist","set"];
+  let swX=0, swY=0, swOn=false;
+  document.addEventListener("touchstart",e=>{
+    if(e.touches.length!==1){ swOn=false; return; }
+    swX=e.touches[0].clientX; swY=e.touches[0].clientY; swOn=true;
+  },{passive:true});
+  document.addEventListener("touchend",e=>{
+    if(!swOn) return; swOn=false;
+    if($("#setup").classList.contains("show")) return;                 // 初期設定画面では無効
+    if(catPopEl && catPopEl.classList.contains("show")) return;        // ポップアップ表示中は無効
+    const dx=e.changedTouches[0].clientX-swX, dy=e.changedTouches[0].clientY-swY;
+    if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*2) return;         // 横に十分動いた時だけ
+    const cur=TAB_ORDER.findIndex(t=>$(`nav.tabs button[data-tab="${t}"]`).classList.contains("sel"));
+    const next=cur+(dx<0?1:-1);                                        // 左スワイプ=次のタブ
+    if(next<0||next>=TAB_ORDER.length) return;
+    $(`nav.tabs button[data-tab="${TAB_ORDER[next]}"]`).click();
+  },{passive:true});
+
+  // 表示密度（ふつう／コンパクト）
+  const dens=settings.density||"normal";
+  document.body.classList.toggle("compact",dens==="compact");
+  $$('#densityRadios input').forEach(r=>{
+    if(r.value===dens){ r.checked=true; r.closest("label").classList.add("sel"); }
+    r.onchange=()=>{
+      settings.density=r.value; save(LS.set,settings);
+      document.body.classList.toggle("compact",r.value==="compact");
+      $$('#densityRadios label').forEach(l=>l.classList.remove("sel"));
+      r.closest("label").classList.add("sel");
     };
   });
   // ジャンル選択（買い物・在庫の追加バー共通）
