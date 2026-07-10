@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.14.0" />
+<link rel="manifest" href="manifest.webmanifest?v=1.15.0" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -68,12 +68,28 @@
   .view.active{display:block;animation:fade .18s ease;}
   @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 
+  /* ---------- カテゴリインデックス（在庫の頭出し） ---------- */
+  .catindex{
+    position:sticky;top:0;z-index:16;background:var(--bg);margin:0 -14px;padding:6px 12px;
+    display:flex;gap:6px;overflow-x:auto;-ms-overflow-style:none;scrollbar-width:none;
+    border-bottom:1px solid var(--line);
+  }
+  .catindex::-webkit-scrollbar{display:none;}
+  .catindex button{
+    flex:0 0 auto;width:40px;height:40px;border-radius:11px;background:var(--surface);
+    border:1px solid var(--line);font-size:19px;display:grid;place-items:center;box-shadow:var(--shadow);
+  }
+  .catindex button:active{background:var(--green-soft);}
+  .catindex:empty{display:none;}
+
   /* ---------- カテゴリ見出し ---------- */
-  .cat{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;color:var(--muted);font-size:13px;font-weight:700;}
+  .cat{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;color:var(--muted);font-size:13px;font-weight:700;scroll-margin-top:56px;}
   .cat .emoji{font-size:16px;}
   .cat .rule{flex:1;height:1px;background:var(--line);}
   /* 小分類ラベル（売り場の中での区切り。太字＋緑で目立たせる） */
   .subcat{margin:6px 4px 4px 6px;font-size:12px;font-weight:800;color:var(--green);letter-spacing:.03em;}
+  /* 常備でない品（B）をカテゴリ末尾に分けるための薄い区切り（ラベルなし） */
+  .stockdiv{height:0;border-top:1px dashed var(--line);margin:10px 10px 8px;}
   /* 「定番・在庫から追加」のカテゴリ折りたたみ見出し */
   .suggcat{
     width:100%;display:flex;align-items:center;gap:8px;background:var(--surface);
@@ -435,16 +451,8 @@
         </div>
       </div>
       <p style="font-size:13px;color:var(--muted);margin:2px 4px 8px;">「切れた」にすると買い物リストへ自動で追加されます。</p>
+      <div class="catindex" id="stockCatIndex"></div>
       <div id="stockBody"></div>
-      <div class="addbar" style="position:relative;padding:0;margin-top:10px;">
-        <div class="inner" style="box-shadow:var(--shadow);">
-          <button class="catchip" id="stockCatBtn" type="button" aria-label="ジャンルを選ぶ">🛒</button>
-          <input id="stockAdd" placeholder="在庫に追加（例：牛乳）" />
-          <button class="go" id="stockAddGo" aria-label="追加">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
-        </div>
-      </div>
     </section>
 
     <!-- 履歴 -->
@@ -543,6 +551,17 @@
     </div>
   </div>
 
+  <!-- 追加バー（在庫時のみ表示・下部固定） -->
+  <div class="addbar" id="stockAddbar" style="display:none;">
+    <div class="inner">
+      <button class="catchip" id="stockCatBtn" type="button" aria-label="ジャンルを選ぶ">🛒</button>
+      <input id="stockAdd" placeholder="在庫に追加（例：牛乳）" />
+      <button class="go" id="stockAddGo" aria-label="追加">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+  </div>
+
   <nav class="tabs">
     <button data-tab="list" class="sel">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
@@ -578,7 +597,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.14.0";
+const VERSION = "v1.15.0";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -1078,7 +1097,7 @@ async function setStock(st,state){
 // 常備品（A）か「在庫のみ」（B）か。フラグ無し＝常備品
 function isStaple(st){ return st.staple!==false; }
 async function setStaple(st,val){
-  const msg=val?"常備品にしました":"「在庫のみ」にしました（切れても自動追加しません）";
+  const msg=val?"常備品にしました":"定番外にしました（切れても自動追加しません）";
   if(DEMO){ st.staple=val; demoRender(); toast(msg); return; }
   await updateDoc(doc(stockCol(),st.id),{staple:val});
   toast(msg);
@@ -1331,6 +1350,7 @@ function renderStock(){
   else badge.style.display="none";
 
   const body=$("#stockBody"); body.innerHTML="";
+  const idx=$("#stockCatIndex"); if(idx) idx.innerHTML="";
   if(!stockItems.length){
     body.innerHTML=`<div class="empty"><div class="big">📦</div><p>在庫はまだありません</p><p>いつも切らしたくない物を登録しておくと便利です</p></div>`;
     return;
@@ -1340,12 +1360,25 @@ function renderStock(){
     const items=stockItems.filter(s=>s.category===cid);
     if(!items.length)continue;
     const c=CAT_MAP[cid];
-    const h=document.createElement("div"); h.className="cat";
+    const h=document.createElement("div"); h.className="cat"; h.id="stkcat-"+cid;
     h.innerHTML=`<span class="emoji">${c.emoji}</span>${c.name}<span class="rule"></span>`;
     body.appendChild(h);
-    for(const g of groupBySub(cid,items)){
+    // 常備品（A）を小分類ごとに → その後、常備でない品（B）をカテゴリ末尾に（ラベルなし・薄い区切りのみ）
+    const aItems=items.filter(isStaple), bItems=items.filter(s=>!isStaple(s));
+    for(const g of groupBySub(cid,aItems)){
       if(g.label){ const s=document.createElement("div"); s.className="subcat"; s.textContent=g.label; body.appendChild(s); }
       g.items.forEach(st=>body.appendChild(stockRow(st)));
+    }
+    if(bItems.length){
+      if(aItems.length){ const d=document.createElement("div"); d.className="stockdiv"; body.appendChild(d); }
+      // 売り場順は保ちつつラベルは出さない
+      groupBySub(cid,bItems).forEach(g=>g.items.forEach(st=>body.appendChild(stockRow(st))));
+    }
+    // インデックスにアイコン追加（タップでそのカテゴリの頭へ）
+    if(idx){
+      const jb=document.createElement("button"); jb.type="button"; jb.textContent=c.emoji; jb.title=c.name;
+      jb.onclick=()=>h.scrollIntoView({behavior:"smooth",block:"start"});
+      idx.appendChild(jb);
     }
   }
 }
@@ -1356,12 +1389,12 @@ function stockRow(st){
   const b=document.createElement("div"); b.className="body";
   const nameCls="name"+(GENERIC.has(st.name)?" generic":"")+(!staple?" stockonly":"");
   b.innerHTML=`<div class="${nameCls}">${esc(st.name)}</div>
-    <div class="meta"><span class="who"><span class="pip" style="background:${st.updatedColor||'#ccc'}"></span>${esc(st.updatedBy||"")} ・ ${rel(st.updatedAt)}${staple?"":" ・ 在庫のみ"}</span></div>`;
+    <div class="meta"><span class="who"><span class="pip" style="background:${st.updatedColor||'#ccc'}"></span>${esc(st.updatedBy||"")} ・ ${rel(st.updatedAt)}</span></div>`;
   row.append(catBadge(st,true),b);
   if(stockEdit){
-    // 編集モード：状態ボタンの代わりに「常備/在庫のみ」切替と削除を表示
+    // 編集モード：状態ボタンの代わりに「常備」トグル（オン=緑）と削除を表示
     const sp=document.createElement("button"); sp.className="staplebtn"+(staple?" on":"");
-    sp.textContent=staple?"常備":"在庫のみ";
+    sp.textContent="常備"; sp.title=staple?"常備品（切れたら自動でリストへ）":"定番外（切れても自動追加しない）";
     sp.onclick=()=>setStaple(st,!staple);
     const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","在庫から削除");
     del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
@@ -1493,6 +1526,7 @@ function initUI(){
       $$(".view").forEach(v=>v.classList.remove("active"));
       $("#view-"+b.dataset.tab).classList.add("active");
       $("#addbar").style.display = b.dataset.tab==="list" ? "block":"none";
+      $("#stockAddbar").style.display = b.dataset.tab==="stock" ? "block":"none";
       window.scrollTo(0,0);
     };
   });
