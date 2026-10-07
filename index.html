@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#2F8F6B" />
 <title>おうちの買い物</title>
-<link rel="manifest" href="manifest.webmanifest?v=1.15.1" />
+<link rel="manifest" href="manifest.webmanifest?v=1.15.2" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <!-- 見出し用のみ軽量に読み込み（本文は端末フォント） -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -597,7 +597,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================= 定数 ================= */
-const VERSION = "v1.15.1";
+const VERSION = "v1.15.2";
 const CATS = [
   { id:"veg",   name:"野菜・果物",   emoji:"🥬" },
   { id:"meat",  name:"肉・魚",       emoji:"🥩" },
@@ -873,6 +873,9 @@ $("#setupGo").onclick=()=>{
   if(!name){ return fail("名前を入力してください。"); }
   if(!famv){ return fail("家族コードを入力してください。"); }
   save(LS.cfg,cfg); save(LS.me,{name,color:setupColor}); localStorage.setItem(LS.fam,famv); save(LS.set,settings);
+  // すでに起動済み（設定のやり直し）やデモ中なら、ページを読み直して新しい設定で起動し直す
+  // （同じページ内で再起動すると操作の受け付けが二重になり、設定を変えた場合は初期化エラーにもなるため）
+  if(db || DEMO){ location.href=location.pathname; return; }
   me={name,color:setupColor}; fam=famv;
   err.style.display="none";
   $("#setup").classList.remove("show");
@@ -1216,7 +1219,7 @@ function itemRow(it){
     : `${it.addedBy||""} ・ ${rel(it.addedAt)}`;
   const isZ=!it.checked && GENERIC.has(it.name);
   b.innerHTML=`<div class="name${GENERIC.has(it.name)?" generic":""}">${esc(it.name)}</div>
-    <div class="meta"><span class="who"><span class="pip" style="background:${it.checked?(it.updatedColor||'#ccc'):(it.addedColor||'#ccc')}"></span>${esc(who)}</span>${isZ?'<span class="zhint">タップで選ぶ</span>':''}</div>`;
+    <div class="meta"><span class="who"><span class="pip" style="background:${safeColor(it.checked?it.updatedColor:it.addedColor)}"></span>${esc(who)}</span>${isZ?'<span class="zhint">タップで選ぶ</span>':''}</div>`;
   if(isZ) b.onclick=()=>openZSheet(it);
   const del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","削除");
   del.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>`;
@@ -1256,7 +1259,8 @@ function openZSheet(it){
   const list=m.querySelector(".zlist"); list.innerHTML="";
   cands.forEach(n=>{
     const st=stockItems.find(s=>s.name===n);
-    const badge=st?`<span class="zbadge ${st.state}">${st.state==="ok"?"家にある":st.state==="low"?"少ない":"切れてる"}</span>`:"";
+    const stt=st?(["ok","low","out"].includes(st.state)?st.state:"ok"):null;
+    const badge=st?`<span class="zbadge ${stt}">${stt==="ok"?"家にある":stt==="low"?"少ない":"切れてる"}</span>`:"";
     const row=document.createElement("label"); row.className="zrow";
     row.innerHTML=`<input type="checkbox" value="${esc(n)}"><span>${esc(n)}</span>${badge}`;
     list.appendChild(row);
@@ -1271,10 +1275,14 @@ function openZSheet(it){
 // Z品を、選んだ具体品の「買った✓」に置き換える（複数可）。在庫の閉ループも発動
 async function buyGeneric(it,names){
   if(!names.length) return;
+  // 選んだ品が別行で未購入のままリストにあれば、新しく作らずその行を「買った」にする（二重表示を防ぐ）
+  const existing=n=>listItems.find(x=>x.id!==it.id && !x.checked && x.name===n);
   if(DEMO){
     listItems=listItems.filter(x=>x.id!==it.id);
     names.forEach(n=>{
-      listItems.push({id:"d"+(demoId++),name:n,category:catForName(n),checked:true,
+      const ex=existing(n);
+      if(ex){ ex.checked=true; ex.later=false; ex.updatedBy=me.name; ex.updatedColor=me.color; ex.updatedAt=demoTs(); }
+      else listItems.push({id:"d"+(demoId++),name:n,category:catForName(n),checked:true,
         addedBy:it.addedBy||me.name,addedColor:it.addedColor||me.color,addedAt:it.addedAt||demoTs(),
         updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()});
       const st=stockItems.find(s=>s.name===n);
@@ -1286,7 +1294,9 @@ async function buyGeneric(it,names){
   const batch=writeBatch(db);
   batch.delete(doc(listCol(),it.id));
   names.forEach(n=>{
-    batch.set(doc(listCol()),{name:n,category:catForName(n),checked:true,
+    const ex=existing(n);
+    if(ex) batch.update(doc(listCol(),ex.id),{checked:true,later:false,updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
+    else batch.set(doc(listCol()),{name:n,category:catForName(n),checked:true,
       addedBy:it.addedBy||me.name,addedColor:it.addedColor||me.color,addedAt:it.addedAt||serverTimestamp(),
       updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
     const st=stockItems.find(s=>s.name===n);
@@ -1355,9 +1365,10 @@ function renderStock(){
     body.innerHTML=`<div class="empty"><div class="big">📦</div><p>在庫はまだありません</p><p>いつも切らしたくない物を登録しておくと便利です</p></div>`;
     return;
   }
-  // カテゴリ順
+  // カテゴリ順（不明なカテゴリの品は「その他」に表示して、件数だけ数えて見えない状態を防ぐ）
+  const stCat=s=>CAT_MAP[s.category]?s.category:"other";
   for(const cid of catOrder){
-    const items=stockItems.filter(s=>s.category===cid);
+    const items=stockItems.filter(s=>stCat(s)===cid);
     if(!items.length)continue;
     const c=CAT_MAP[cid];
     const h=document.createElement("div"); h.className="cat"; h.id="stkcat-"+cid;
@@ -1389,7 +1400,7 @@ function stockRow(st){
   const b=document.createElement("div"); b.className="body";
   const nameCls="name"+(GENERIC.has(st.name)?" generic":"")+(!staple?" stockonly":"");
   b.innerHTML=`<div class="${nameCls}">${esc(st.name)}</div>
-    <div class="meta"><span class="who"><span class="pip" style="background:${st.updatedColor||'#ccc'}"></span>${esc(st.updatedBy||"")} ・ ${rel(st.updatedAt)}</span></div>`;
+    <div class="meta"><span class="who"><span class="pip" style="background:${safeColor(st.updatedColor)}"></span>${esc(st.updatedBy||"")} ・ ${rel(st.updatedAt)}</span></div>`;
   row.append(catBadge(st,true),b);
   if(stockEdit){
     // 編集モード：状態ボタンの代わりに「常備」トグル（オン=緑）と削除を表示
@@ -1452,7 +1463,7 @@ function renderHist(){
   }
   histItems.forEach(h=>{
     const el=document.createElement("div"); el.className="hist";
-    el.innerHTML=`<span class="pip" style="background:${h.color||'#ccc'}"></span>
+    el.innerHTML=`<span class="pip" style="background:${safeColor(h.color)}"></span>
       <div class="txt">${esc(h.text)}<div class="t">${esc(h.by||"")} ・ ${rel(h.at)}</div></div>`;
     body.appendChild(el);
   });
@@ -1536,12 +1547,15 @@ function initUI(){
   let swX=0, swY=0, swOn=false;
   document.addEventListener("touchstart",e=>{
     if(e.touches.length!==1){ swOn=false; return; }
+    // 横スクロールする部品・選択シート・入力欄の上で始まったなぞりはタブ切替にしない
+    if(e.target.closest && e.target.closest(".catindex, .zmask, input, textarea")){ swOn=false; return; }
     swX=e.touches[0].clientX; swY=e.touches[0].clientY; swOn=true;
   },{passive:true});
   document.addEventListener("touchend",e=>{
     if(!swOn) return; swOn=false;
     if($("#setup").classList.contains("show")) return;                 // 初期設定画面では無効
     if(catPopEl && catPopEl.classList.contains("show")) return;        // ポップアップ表示中は無効
+    if(zmaskEl && zmaskEl.classList.contains("show")) return;          // Z品の選択シート表示中は無効
     const dx=e.changedTouches[0].clientX-swX, dy=e.changedTouches[0].clientY-swY;
     if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*2) return;         // 横に十分動いた時だけ
     const cur=TAB_ORDER.findIndex(t=>$(`nav.tabs button[data-tab="${t}"]`).classList.contains("sel"));
@@ -1590,7 +1604,7 @@ function initUI(){
     if(v.trim()){ addItem(v,itemCatManual); $("#itemAdd").value=""; resetCatChip($("#itemCatBtn")); itemCatManual=null; }
   };
   $("#itemAddGo").onclick=doAdd;
-  $("#itemAdd").addEventListener("keydown",e=>{ if(e.key==="Enter")doAdd(); });
+  $("#itemAdd").addEventListener("keydown",e=>{ if(isEnterKey(e))doAdd(); });
   $("#itemAdd").addEventListener("input",()=>{
     if(itemCatManual===null) updateCatChipGuess($("#itemCatBtn"),$("#itemAdd").value);
   });
@@ -1600,7 +1614,7 @@ function initUI(){
     if(v.trim()){ addStock(v,stockCatManual); $("#stockAdd").value=""; resetCatChip($("#stockCatBtn")); stockCatManual=null; }
   };
   $("#stockAddGo").onclick=doStock;
-  $("#stockAdd").addEventListener("keydown",e=>{ if(e.key==="Enter")doStock(); });
+  $("#stockAdd").addEventListener("keydown",e=>{ if(isEnterKey(e))doStock(); });
   $("#stockAdd").addEventListener("input",()=>{
     if(stockCatManual===null) updateCatChipGuess($("#stockCatBtn"),$("#stockAdd").value);
   });
@@ -1710,26 +1724,23 @@ async function importData(e){
   try{
     const data=JSON.parse(await f.text());
     if(!confirm("読み込むと現在の在庫リストに項目が追加されます。よろしいですか？"))return;
+    // 復元する項目：カテゴリ（不明なら推定）・在庫の状態・常備オフ（定番外）・あとで
+    const catOk=(c,n)=>CAT_MAP[c]?c:guessCat(n);
+    const stOk=s=>["ok","low","out"].includes(s)?s:"ok";
+    const stockFields=s=>({name:s.name,category:catOk(s.category,s.name),state:stOk(s.state),...(s.staple===false?{staple:false}:{})});
+    const listFields=i=>({name:i.name,category:catOk(i.category,i.name),checked:false,...(i.later?{later:true}:{})});
+    const stockIn=(data.stock||[]).filter(s=>s && s.name && !stockItems.some(x=>x.name===s.name));
+    const listIn=(data.list||[]).filter(i=>i && i.name && !i.checked && !listItems.some(x=>!x.checked&&x.name===i.name));
     if(DEMO){
-      (data.stock||[]).forEach(s=>{ if(!stockItems.some(x=>x.name===s.name))
-        stockItems.push({id:"d"+(demoId++),name:s.name,category:s.category||guessCat(s.name),state:s.state||"ok",updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}); });
-      (data.list||[]).forEach(i=>{ if(!i.checked && !listItems.some(x=>!x.checked&&x.name===i.name))
-        listItems.push({id:"d"+(demoId++),name:i.name,category:i.category||guessCat(i.name),checked:false,addedBy:me.name,addedColor:me.color,addedAt:demoTs(),updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}); });
+      stockIn.forEach(s=>stockItems.push({id:"d"+(demoId++),...stockFields(s),updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}));
+      listIn.forEach(i=>listItems.push({id:"d"+(demoId++),...listFields(i),addedBy:me.name,addedColor:me.color,addedAt:demoTs(),updatedBy:me.name,updatedColor:me.color,updatedAt:demoTs()}));
       demoRender(); toast("読み込みました"); e.target.value=""; return;
     }
     const batch=writeBatch(db);
-    (data.stock||[]).forEach(s=>{
-      if(stockItems.some(x=>x.name===s.name))return;
-      batch.set(doc(stockCol()),{name:s.name,category:s.category||guessCat(s.name),state:s.state||"ok",
-        updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
-    });
-    (data.list||[]).forEach(i=>{
-      if(i.checked)return;
-      if(listItems.some(x=>!x.checked&&x.name===i.name))return;
-      batch.set(doc(listCol()),{name:i.name,category:i.category||guessCat(i.name),checked:false,
-        addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
-        updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()});
-    });
+    stockIn.forEach(s=>batch.set(doc(stockCol()),{...stockFields(s),updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()}));
+    listIn.forEach(i=>batch.set(doc(listCol()),{...listFields(i),
+      addedBy:me.name,addedColor:me.color,addedAt:serverTimestamp(),
+      updatedBy:me.name,updatedColor:me.color,updatedAt:serverTimestamp()}));
     await batch.commit(); toast("読み込みました");
   }catch(err){ toast("読み込みに失敗しました"); console.error(err); }
   e.target.value="";
@@ -1751,6 +1762,10 @@ function setupInstall(){
 
 /* ================= ユーティリティ ================= */
 function esc(s){ return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// 共有データ由来の色は「#から始まる色コード」だけ許可（細工した文字列をHTMLに埋め込ませない）
+function safeColor(c){ return /^#[0-9a-fA-F]{3,8}$/.test(String(c||"")) ? c : "#ccc"; }
+// 確定のEnterだけを拾う（日本語変換中のEnterは無視）
+function isEnterKey(e){ return e.key==="Enter" && !e.isComposing && e.keyCode!==229; }
 function rel(ts){
   if(!ts||!ts.toDate)return "…";
   const d=ts.toDate(), now=Date.now(), diff=(now-d.getTime())/1000;
